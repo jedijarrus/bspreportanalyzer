@@ -1,4 +1,4 @@
 #!/bin/sh
-# Sicherheitsschicht 2: blockt Commits mit echten Daten / PII.
+# Blockt Commits mit versehentlich eingecheckten Laufzeitdaten.
 echo "[pre-commit] sanitize-check ..."
 python scripts/sanitize_check.py --staged || exit 1
