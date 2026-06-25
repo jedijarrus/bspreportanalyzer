@@ -1,0 +1,101 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Telekom BSP Report Analyzer</title>
+  <link rel="stylesheet" href="/static/style.css">
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.7/dist/chart.umd.min.js"></script>
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand"><span class="dot"></span> BSP Flotten-Analyzer</div>
+    <div class="topbar-mid">
+      <input type="search" id="search" placeholder="🔍 Rufnummer, Nutzer, Kostenstelle …" autocomplete="off">
+    </div>
+    <div class="topbar-actions">
+      <span class="stand" id="stand"></span>
+      <button class="btn" id="verlaufBtn" hidden>Verlauf</button>
+      <label class="btn btn-primary">
+        Report laden
+        <input type="file" id="fileInput" accept=".xlsx" hidden>
+      </label>
+      <button class="btn" id="settingsBtn" hidden title="Einstellungen">⚙</button>
+      <button class="btn" id="logoutBtn" hidden>Abmelden</button>
+    </div>
+  </header>
+
+  <!-- Auth-Modal -->
+  <div id="authOverlay" class="auth-overlay" hidden>
+    <div class="auth-box">
+      <div class="brand"><span class="dot"></span> BSP Flotten-Analyzer</div>
+      <h2 id="authTitle">Anmelden</h2>
+      <p id="authHint" class="hint"></p>
+      <input type="password" id="authPw" placeholder="Passwort" autocomplete="current-password">
+      <input type="password" id="authPw2" placeholder="Passwort wiederholen" autocomplete="new-password" hidden>
+      <div id="authError" class="auth-error"></div>
+      <button class="btn btn-primary" id="authSubmit">Weiter</button>
+    </div>
+  </div>
+
+  <div id="toast" class="toast"></div>
+
+  <main class="layout" id="appMain" hidden>
+    <aside class="sidebar">
+      <section class="data-panel">
+        <h2>Rahmenverträge</h2>
+        <ul id="rvList" class="rv-list"></ul>
+      </section>
+      <section class="facet-wrap">
+        <h2>Filter</h2>
+        <div id="facets"></div>
+      </section>
+    </aside>
+
+    <section class="content">
+      <div id="chips" class="chips"></div>
+      <div id="kpis" class="kpis"></div>
+
+      <div class="section-title">Handlungsbedarf</div>
+      <div id="handlungsbedarf" class="action-grid"></div>
+
+      <div class="section-title">Auswertung <span class="muted" id="chartHint">(Balken/Segment klicken = filtern)</span></div>
+      <div id="charts" class="chart-matrix"></div>
+
+      <div class="section-title row-between">
+        <span>Verträge <span id="gridCount" class="muted"></span></span>
+        <button class="btn" id="csvBtn">CSV export</button>
+      </div>
+      <div class="table-wrap">
+        <table id="grid"></table>
+      </div>
+      <div id="emptyState" class="empty" hidden>Noch keine Daten — lade oben einen Report (.xlsx).</div>
+    </section>
+  </main>
+
+  <!-- Detail-Drawer -->
+  <div id="drawerOverlay" class="drawer-overlay" hidden></div>
+  <aside id="drawer" class="drawer" hidden></aside>
+
+  <!-- Einstellungen-Modal (Report-Verwaltung) -->
+  <div id="settingsOverlay" class="modal-overlay" hidden>
+    <div class="modal-box">
+      <div class="modal-head"><h2>Einstellungen · Reports</h2><button class="btn" id="settingsClose">✕</button></div>
+      <p class="hint">Hochgeladene Reports. Löschen entfernt den Snapshot (und seine Verträge aus der aktuellen Sicht).</p>
+      <ul id="reportList" class="report-list"></ul>
+    </div>
+  </div>
+
+  <!-- Verlauf-Modal -->
+  <div id="verlaufOverlay" class="modal-overlay" hidden>
+    <div class="modal-box">
+      <div class="modal-head"><h2>Verlauf je Rahmenvertrag</h2><button class="btn" id="verlaufClose">✕</button></div>
+      <p class="hint">Kennzahlen über die Uploads eines Rahmenvertrags (Zeitachse).</p>
+      <label>Rahmenvertrag <select id="verlaufRv"></select></label>
+      <div class="chart-box" style="height:340px"><canvas id="chartVerlauf"></canvas></div>
+    </div>
+  </div>
+
+  <script src="/static/app.js"></script>
+</body>
+</html>

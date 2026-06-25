@@ -1,0 +1,5 @@
+#!/bin/sh
+# Sicherheitsschicht 3: letzte Reissleine vor dem Push.
+# Scannt ALLE getrackten Dateien (nicht nur den Diff) auf PII/Daten.
+echo "[pre-push] sanitize-check (alle getrackten Dateien) ..."
+python scripts/sanitize_check.py --tracked || exit 1

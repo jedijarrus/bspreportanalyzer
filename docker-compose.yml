@@ -1,0 +1,10 @@
+services:
+  analyzer:
+    build: .
+    container_name: bsp-report-analyzer
+    ports:
+      - "8080:8080"
+    volumes:
+      # Echte Daten leben NUR hier auf dem Host — nie im Image, nie im Repo
+      - ./data:/data
+    restart: unless-stopped
