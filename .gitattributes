@@ -1,0 +1,4 @@
+# Shell-Skripte immer mit LF (sonst bricht der Shebang in Linux/Docker)
+*.sh text eol=lf
+.githooks/pre-commit text eol=lf
+.githooks/pre-push text eol=lf
