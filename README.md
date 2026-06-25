@@ -1,94 +1,105 @@
-# Telekom BSP Report Analyzer
+# BSP Report Analyzer
 
-Web-Tool zum Auswerten von **Telekom-BSP-RVKU-KI-Reports** (Mobilfunk-Rahmenvertrag,
-ein Datensatz pro SIM/Karte). Reports werden hochgeladen, in einer SQLite-DB als
-Snapshots abgelegt und über die Zeit ausgewertet. Läuft als eigenständiger
-Docker-Container. Zielnutzer: ein interner IT-Mitarbeiter, der die Verträge verwaltet.
+Interaktives Dashboard zur Auswertung von Telekom-BSP-Reports (RVKU-KI,
+Mobilfunk-Rahmenverträge). Reports hochladen, den Bestand filtern und Verträge
+im Blick behalten – als eigenständiger Docker-Container.
 
-## ⚠️ Sicherheitsregel (oberste Priorität)
+## Überblick
 
-**Echte Report-Daten dürfen NIEMALS auf GitHub gelangen.** Drei Schutzschichten:
+Der Analyzer liest die Excel-Exporte des Telekom Business Service Portals
+(ein Datensatz pro SIM/Anschluss) ein und stellt sie als durchsuchbare,
+filterbare Gesamtsicht dar. Statt einzelne Exporte nebeneinanderzulegen, zeigt
+das Dashboard immer den **aktuellen Stand über alle Rahmenverträge**: pro
+Rahmenvertrag zählt jeweils der neueste Report, gekündigte Anschlüsse fallen
+automatisch heraus.
 
-1. **`.gitignore`** sperrt `data/`, `*.xlsx`, `*.db`, Exporte.
-2. **pre-commit Hook** scannt gestagte Dateien auf PII (IBAN, Rufnummer, BIC) und
-   verbotene Dateitypen → blockt den Commit.
-3. **pre-push Hook** scannt vor jedem Push alle getrackten Dateien erneut.
+## Features
 
-Echte Daten leben ausschließlich im `data/`-Volume. Tests laufen gegen
-**synthetische** Fixtures (faker), nie gegen Echtdaten.
+**Flottensicht & Filter**
+- Aktuelle Gesamtsicht über alle Rahmenverträge
+- Faceted-Filter mit Live-Counts: Rahmenvertrag, Tarif, Kartentyp, Status,
+  Bindefrist, MultiSIM, VVL-Berechtigung
+- Klickbare Charts – ein Klick auf ein Balken-/Segment filtert die gesamte Sicht
+- Volltextsuche (Rufnummer, Nutzer, Kostenstelle), entfernbare Filter-Chips
+- Smart-Filter für typische Aufgaben, z. B. „VVL fällig ≤ 2 Monate"
 
-> Nach dem Klonen **einmalig** die Hooks aktivieren:
-> ```sh
-> sh scripts/install-hooks.sh
-> ```
+**Verträge**
+- Sortierbare Vertrags-Tabelle als Drill-down-Ziel
+- Detail-Ansicht je Vertrag: alle Felder gruppiert, Notizfeld, Druck/PDF
+- CSV-Export der aktuell gefilterten Sicht
 
-## Zugang / Passwort
+**Auswertungen**
+- VVL / Bindefrist mit Ampel-Buckets (abgelaufen, 0–3, 3–12, > 12 Monate)
+- Bestand & Status, Tarif- und Options-Verteilung, MultiSIM
+- Verlauf über mehrere Reports
 
-Beim **ersten Start** ist kein Passwort gesetzt — das Dashboard zeigt ein
-Setup-Modal, in dem ein Passwort (mind. 8 Zeichen) festgelegt wird. Der Hash
-liegt in der DB (`data/`, gitignored). Danach erscheint bei jedem Besuch ein
-Login-Modal (kein Basic-Auth). Schutz ist **serverseitig** erzwungen: alle
-`/api/*`-Datenendpunkte liefern ohne gültige Session 401.
+**Betrieb**
+- Ein Docker-Container, Daten in einem Volume
+- Passwortschutz per Session-Cookie (Einrichtung beim ersten Start)
 
-Sessions laufen über ein signiertes HttpOnly-Cookie. Relevante ENV-Variablen:
-
-| Variable | Default | Zweck |
-|----------|---------|-------|
-| `BSP_SECRET_KEY` | persistiert in `data/secret.key` | Signierschlüssel für Sessions |
-| `BSP_MAX_UPLOAD_MB` | `25` | maximale Upload-Größe (OOM-/Zip-Bomb-Schutz) |
-
-> Hinter einem HTTPS-Reverse-Proxy `https_only=True` in `app/api.py` setzen.
-
-## Funktionen
-
-| Tab | Inhalt |
-|-----|--------|
-| **Bestand** | Linien gesamt, gesperrt, Kartentyp-Verteilung, bald ablaufende |
-| **VVL / Bindefrist** | Bindefrist-Buckets (abgelaufen / 0-3 / 3-12 / >12 Mon), Tabelle auslaufender Linien mit Ampel |
-| **Tarife / Optionen** | Tarif-Verteilung; Daten-/Voice-/Roaming-Optionen (komma-separierte Mehrfachwerte korrekt zerlegt) |
-| **Vergleich** | Zwei Reports gegenüberstellen: neue / entfernte / geänderte Linien (Schlüssel: Rufnummer) |
-| **Trend** | Kennzahlen über alle Reports hinweg (Linien, gesperrt, ablaufend) |
-
-## Schnellstart (Docker)
+## Schnellstart
 
 ```sh
+git clone https://github.com/jedijarrus/bspreportanalyzer.git
+cd bspreportanalyzer
 docker compose up --build
-# -> http://localhost:8080
 ```
 
-Die echten Reports landen beim Upload im gemounteten `./data`-Volume und bleiben dort.
+Anschließend <http://localhost:8080> öffnen und ein Passwort festlegen.
 
-## Lokale Entwicklung
+## Nutzung
+
+1. **Report laden** – einen RVKU-KI-Export (`.xlsx`) hochladen. Mehrere
+   Rahmenverträge bzw. Reports werden automatisch zusammengeführt.
+2. **Filtern** – links über die Facetten oder per Klick auf die Diagramme.
+3. **Details** – eine Tabellenzeile öffnen: alle Felder, Notiz, Druck/PDF.
+4. **Exportieren** – „CSV export" gibt die gefilterte Sicht aus.
+
+## Konfiguration
+
+Steuerung über Umgebungsvariablen (z. B. in `docker-compose.yml`):
+
+| Variable | Default | Bedeutung |
+|---|---|---|
+| `BSP_DATA_DIR` | `data` | Verzeichnis für Datenbank, Uploads und Exporte |
+| `BSP_MAX_UPLOAD_MB` | `25` | maximale Upload-Größe in MB |
+| `BSP_SECRET_KEY` | wird in `data/secret.key` erzeugt | Schlüssel für signierte Session-Cookies |
+
+Hinter einem HTTPS-Reverse-Proxy in `app/api.py` `https_only=True` setzen.
+
+## Entwicklung
 
 ```sh
 pip install -r requirements-dev.txt
-sh scripts/install-hooks.sh          # Git-Hooks aktivieren
+sh scripts/install-hooks.sh        # Git-Hooks aktivieren
 uvicorn app.api:app --reload --port 8080
-pytest -q                            # Tests
+pytest -q                          # Tests
 ```
 
-## Architektur
+Tests laufen gegen synthetische Fixtures
+(`fixtures/fake_report_generator.py`), nicht gegen reale Reports.
+
+## Projektstruktur
 
 ```
 app/
-  schema.py     kanonisches 101-Spalten-Schema (eine Quelle der Wahrheit)
-  parser.py     xlsx -> normalisierte Zeilen (datetime, '\'-Platzhalter -> None)
-  store.py      SQLite-Persistenz (reports + contracts, CASCADE-Delete)
-  analytics.py  reine Auswertungsfunktionen (VVL, Verteilungen, Diff, Trend)
-  api.py        FastAPI: Upload, Verwaltung, Auswertungs-Endpunkte
-  config.py     Pfade/ENV
-web/            Dashboard (HTML + Vanilla JS + Chart.js)
-fixtures/       synthetischer Report-Generator (Tests/Entwicklung)
-scripts/        sanitize_check.py, install-hooks.sh, explore.py (lokale Daten-Exploration)
+  schema.py     Kanonisches Spaltenschema (eine Quelle der Wahrheit)
+  parser.py     xlsx → normalisierte Datensätze
+  store.py      SQLite-Persistenz (Reports, Verträge, Notizen)
+  analytics.py  Auswertungen (aktuelle Flotte, VVL, Verteilungen, Verlauf)
+  api.py        FastAPI: Auth, Upload, Daten- und Auswertungs-Endpunkte
+  config.py     Pfade & Konfiguration
+web/            Dashboard (HTML, Vanilla JS, Chart.js)
+fixtures/       Synthetischer Report-Generator
+scripts/        Hilfsskripte
 tests/          pytest (parser, store, analytics, api)
 ```
 
-## Daten-Exploration (lokal, optional)
+## Tech-Stack
 
-`scripts/explore.py` lädt die echten xlsx in eine **separate** SQLite
-(`data/explore.db`, gitignored) — unabhängig vom App-Code, für Ad-hoc-Analysen:
+Python 3.13 · FastAPI · SQLite · Vanilla JS + Chart.js · Docker
 
-```sh
-python scripts/explore.py import
-python scripts/explore.py profile     # PII-sicheres Aggregat-Profil
-```
+## Daten
+
+Hochgeladene Reports und die Datenbank liegen ausschließlich im `data/`-Volume
+und sind nicht Teil des Repositorys.

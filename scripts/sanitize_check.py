@@ -1,14 +1,13 @@
 #!/usr/bin/env python3
-"""Sanitize-Scanner — verhindert, dass echte Telekom-BSP-Daten ins Repo gelangen.
+"""Guard gegen versehentlich eingecheckte Laufzeitdaten/Secrets.
 
-Zweite & dritte Sicherheitsschicht (nach .gitignore). Wird von den
-git-Hooks pre-commit und pre-push aufgerufen, kann aber auch manuell
-oder in CI laufen:
+Wird von den git-Hooks pre-commit und pre-push aufgerufen, läuft aber auch
+manuell oder in CI:
 
     python scripts/sanitize_check.py --staged   # nur gestagte Änderungen (pre-commit)
     python scripts/sanitize_check.py --tracked  # alle getrackten Dateien (pre-push)
 
-Exit 0 = sauber, Exit 1 = PII/verbotene Datei gefunden -> Hook blockt.
+Exit 0 = sauber, Exit 1 = Treffer gefunden -> Hook blockt.
 """
 from __future__ import annotations
 
@@ -18,7 +17,7 @@ import subprocess
 import sys
 from pathlib import Path
 
-# --- Verbotene Dateiendungen (echte Reports / DB / Exporte) ----------------
+# --- Verbotene Dateiendungen (Reports / DB / Exporte) ----------------------
 FORBIDDEN_SUFFIXES = {".xlsx", ".xls", ".db", ".sqlite", ".sqlite3", ".csv"}
 
 # --- PII-Muster ------------------------------------------------------------
@@ -112,7 +111,7 @@ def main() -> int:
         for prob in problems:
             print(f"   - {prob}", file=sys.stderr)
         print(
-            "\n  Echte Telekom-Daten gehoeren NUR nach data/ (gitignored).\n"
+            "\n  Laufzeitdaten gehoeren NUR nach data/ (gitignored).\n"
             "  Datei entfernen: git rm --cached <datei>\n",
             file=sys.stderr,
         )

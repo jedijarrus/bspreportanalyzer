@@ -1,13 +1,12 @@
 # ============================================================
-# DATEN-SPERRE — niemals echte Report-Daten ins Repo!
-# Diese Regeln sind die erste von drei Sicherheitsschichten.
+# Laufzeitdaten (nicht versionieren)
 # ============================================================
 
-# Laufzeit-Daten (DB, Uploads, Exporte) — komplett ausgeschlossen
+# DB, Uploads, Exporte
 data/
 !data/.gitkeep
 
-# Excel-Reports (echte Telekom BSP Exporte)
+# Report-Dateien
 *.xlsx
 *.xls
 
