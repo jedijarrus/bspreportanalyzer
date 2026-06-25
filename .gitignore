@@ -1,0 +1,47 @@
+# ============================================================
+# DATEN-SPERRE — niemals echte Report-Daten ins Repo!
+# Diese Regeln sind die erste von drei Sicherheitsschichten.
+# ============================================================
+
+# Laufzeit-Daten (DB, Uploads, Exporte) — komplett ausgeschlossen
+data/
+!data/.gitkeep
+
+# Excel-Reports (echte Telekom BSP Exporte)
+*.xlsx
+*.xls
+
+# Datenbanken
+*.db
+*.sqlite
+*.sqlite3
+*.sqlite3-journal
+
+# Exporte
+*.csv
+exports/
+uploads/
+
+# ============================================================
+# Python
+# ============================================================
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+.venv/
+venv/
+env/
+
+# ============================================================
+# IDE / OS
+# ============================================================
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+*.swp
