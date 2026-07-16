@@ -599,10 +599,10 @@ async function renderRechnung(pane, id) {
         <div class="card2"><h3>Top-Kostentreiber</h3>${d.top_treiber.slice(0, 8).map((t) => `<div class="dl"><span>${esc(t.rufnummer)}</span><b>${money(t.netto)}</b></div>`).join("")}</div>
         <div class="card2"><h3>Auffälligkeiten (Δ)</h3>${anom}</div>
         <div class="card2"><h3>Datenauslastung</h3>
-          <div class="dl"><span>Positionen mit Volumen</span><b>${au.anzahl}</b></div>
-          <div class="dl"><span>über 100% (drüber)</span><b class="warn">${au.ueber_100}</b></div>
-          <div class="dl"><span>&lt; 25% genutzt</span><b>${au.unter_25}</b></div>
-          <div class="dl"><span>&lt; 10% (fast ungenutzt)</span><b>${au.unter_10}</b></div>
+          <div class="dl"><span>Gesamt-Auslastung</span><b>${au.auslastung_pct}%</b></div>
+          <div class="dl"><span>gebucht / verbraucht</span><b>${au.gebucht_gb.toLocaleString("de-DE")} / ${au.verbraucht_gb.toLocaleString("de-DE")} GB</b></div>
+          <div class="dl"><span>Downgrade-Kandidaten (&lt; 25%)</span><b class="warn">${au.unter_25}</b></div>
+          <div class="dl"><span>Overage (&gt; 100%)</span><b>${au.ueber_100}</b></div>
         </div>
       </div>
     </div>`;
@@ -634,10 +634,19 @@ async function renderControlling() {
     ["Nicht zugeordnet", money(rec.nicht_zugeordnet), ""],
   ];
   const topKst = ks.slice(0, 12);
+  const au = d.datenauslastung;
   pane.innerHTML = `
     <div class="page">
       <h1 class="page-title">Controlling <span class="muted">· Rechnung ${fmtDate(inv.period_start)}</span></h1>
       <div class="kpis">${kpis.map(([l, v, dd]) => `<div class="card"><div class="num">${v}</div><div class="lbl">${l}${dd ? " · " + dd : ""}</div></div>`).join("")}</div>
+      <div class="section-title">Datenauslastung <span class="muted">(gebuchtes vs. verbrauchtes Volumen)</span></div>
+      <div class="kpis">
+        <div class="card"><div class="num">${au.auslastung_pct}%</div><div class="lbl">Gesamt-Auslastung</div></div>
+        <div class="card"><div class="num">${au.gebucht_gb.toLocaleString("de-DE")} GB</div><div class="lbl">gebucht</div></div>
+        <div class="card"><div class="num">${au.verbraucht_gb.toLocaleString("de-DE")} GB</div><div class="lbl">verbraucht</div></div>
+        <div class="card"><div class="num warn">${au.unter_25}</div><div class="lbl">Downgrade-Kandidaten (&lt; 25%)</div></div>
+        <div class="card"><div class="num">${au.ueber_100}</div><div class="lbl">Overage (&gt; 100%)</div></div>
+      </div>
       <div class="section-title">Kostentrend <span class="muted">(Netto je Rechnung)</span></div>
       <div class="chart-box" style="height:280px"><canvas id="ctrlTrend"></canvas></div>
       <div class="section-title">Top-Kostenstellen <span class="muted">(${fmtDate(inv.period_start)})</span></div>
