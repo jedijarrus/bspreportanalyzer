@@ -34,8 +34,8 @@ automatisch heraus.
 - Verlauf über mehrere Reports
 
 **Kosten & Controlling**
-- Import von XRechnung/UBL-Rechnungen (.xml); Verknüpfung mit den Verträgen
-  über die Rufnummer
+- Import von Telekom-Rechnungen als CSV (empfohlen — enthält Datenverbrauch je
+  Vertrag) oder XRechnung/UBL (.xml); Verknüpfung mit den Verträgen über die Rufnummer
 - Monatskosten und Rabatt je Vertrag (in Tabelle, Facetten und Detail-Ansicht)
 - Kosten je Kostenstelle und Kostentrend über mehrere Rechnungen
 - Netto/Brutto umschaltbar
@@ -56,8 +56,8 @@ Anschließend <http://localhost:8080> öffnen und ein Passwort festlegen.
 
 ## Nutzung
 
-1. **Laden** – einen RVKU-KI-Report (`.xlsx`) oder eine Rechnung (`.xml`)
-   hochladen; der Dateityp wird automatisch erkannt.
+1. **Laden** – einen RVKU-KI-Report (`.xlsx`) oder eine Rechnung (`.csv`, auch
+   `.xml`) hochladen; der Dateityp wird automatisch erkannt.
 2. **Filtern** – links über die Facetten oder per Klick auf die Diagramme.
 3. **Details** – eine Tabellenzeile öffnen: alle Felder, Kosten, Notiz, Druck/PDF.
 4. **Kosten** – Button oben öffnet Kostenstellen-Auswertung und Kostentrend.

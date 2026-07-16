@@ -574,7 +574,7 @@ async function renderRechnungen(param) {
   if (param) return renderRechnung(pane, +param);
   const invs = state.invoices;
   if (!invs.length) {
-    pane.innerHTML = '<div class="page"><h1 class="page-title">Rechnungen</h1><div class="empty">Noch keine Rechnung geladen — lade oben eine .xml.</div></div>';
+    pane.innerHTML = '<div class="page"><h1 class="page-title">Rechnungen</h1><div class="empty">Noch keine Rechnung geladen — lade oben eine Rechnung (.csv).</div></div>';
     return;
   }
   const rows = invs.map((r, i) => ({ r, delta: i > 0 ? r.total_net - invs[i - 1].total_net : null })).reverse();
