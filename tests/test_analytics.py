@@ -249,6 +249,10 @@ def test_datenauslastung_buckets():
     assert a["ueber_100"] == 1
     assert a["unter_25"] == 2
     assert a["unter_10"] == 1
+    # GB-Summen + Gesamtauslastung
+    assert round(a["gebucht_gb"]) == 240        # 80*3
+    assert round(a["verbraucht_gb"]) == 103      # 9+90+4
+    assert round(a["auslastung_pct"]) == 43      # 103/240
 
 
 def test_kosten_trend_je_periode():

@@ -271,8 +271,13 @@ def datenauslastung(lines: list[dict]) -> dict:
     rows = [(l["data_contracted_gb"], l.get("data_used_gb") or 0.0)
             for l in lines if l.get("data_contracted_gb")]
     n = len(rows)
+    gebucht = sum(c for c, _ in rows)
+    verbraucht = sum(u for _, u in rows)
     return {
         "anzahl": n,
+        "gebucht_gb": round(gebucht, 1),
+        "verbraucht_gb": round(verbraucht, 1),
+        "auslastung_pct": round(verbraucht / gebucht * 100, 1) if gebucht else 0.0,
         "ueber_100": sum(1 for c, u in rows if u > c),
         "unter_25": sum(1 for c, u in rows if c and u < 0.25 * c),
         "unter_10": sum(1 for c, u in rows if c and u < 0.10 * c),
