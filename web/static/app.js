@@ -321,6 +321,7 @@ function openDrawer(contract) {
     groups[g].map(([k, v]) => `<div class="dl"><span>${esc(k)}</span><b>${esc(v)}</b></div>`).join("") + `</div>`).join("");
   const key = noteKey(contract);
   state.drawerKey = key;
+  state.drawerRuf = contract.rufnummer;
   const note = state.notes[key] || "";
   const rv = contract.rahmenvertrag ? ` · ${esc(contract.rahmenvertrag)}` : "";
   document.getElementById("drawer").innerHTML =
@@ -544,6 +545,7 @@ document.getElementById("netbrutto").addEventListener("click", (e) => {
   state.brutto = opt.dataset.nb === "brutto";
   document.querySelectorAll("#netbrutto .nb-opt").forEach((b) => b.classList.toggle("active", b === opt));
   render();
+  if (!document.getElementById("drawer").hidden && state.drawerRuf) loadDrawerKosten(state.drawerRuf);
 });
 
 document.getElementById("rvList").addEventListener("click", (e) => {
