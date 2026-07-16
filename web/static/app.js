@@ -665,6 +665,14 @@ async function renderControlling() {
         <div class="card"><div class="num warn">${au.unter_25}</div><div class="lbl">Downgrade-Kandidaten (&lt; 25%)</div></div>
         <div class="card"><div class="num">${au.ueber_100}</div><div class="lbl">Overage (&gt; 100%)</div></div>
       </div>
+      <div class="section-title">Datentarife nach Auslastung <span class="muted">(schlechteste zuerst · anonym, nicht je Vertrag zuordenbar)</span></div>
+      <div class="table-wrap" style="max-height:340px;overflow:auto"><table class="grid-table">
+        <thead><tr><th class="money">gebucht</th><th class="money">verbraucht</th><th style="width:45%">Auslastung</th></tr></thead>
+        <tbody>${(d.auslastung_liste || []).map((r) => `<tr>
+          <td class="money">${r.gebucht_gb.toLocaleString("de-DE")} GB</td>
+          <td class="money">${r.verbraucht_gb.toLocaleString("de-DE")} GB</td>
+          <td><div class="row-meter"><div class="mini-meter"><div class="mini-fill ${r.pct < 40 ? "low" : r.pct < 80 ? "mid" : "high"}" style="width:${Math.min(100, r.pct)}%"></div></div><span class="mini-pct">${r.pct}%</span></div></td>
+        </tr>`).join("")}</tbody></table></div>
       <div class="section-title">Kostentrend <span class="muted">(Netto je Rechnung)</span></div>
       <div class="chart-box" style="height:280px"><canvas id="ctrlTrend"></canvas></div>
       <div class="section-grid">
