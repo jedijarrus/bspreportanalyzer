@@ -210,6 +210,47 @@ def test_kosten_je_kategorie():
     assert round(d["grundpreis"]) == 60 and round(d["rabatt"]) == -15
 
 
+def test_invoice_diff_delta_je_kostenstelle_und_rufnummer():
+    alt = [_il(rufnummer="A", kostenstelle="K1", category="grundpreis", amount=60)]
+    neu = [_il(rufnummer="A", kostenstelle="K1", category="grundpreis", amount=70),
+           _il(rufnummer="B", kostenstelle="K2", category="grundpreis", amount=30)]
+    d = analytics.invoice_diff(alt, neu)
+    assert round(d["gesamt"]["delta"]) == 40  # (70+30) - 60
+    assert d["neu"] == ["B"]
+    assert d["weggefallen"] == []
+    ruf_a = [x for x in d["je_rufnummer"] if x["rufnummer"] == "A"][0]
+    assert round(ruf_a["delta"]) == 10
+
+
+def test_invoice_diff_weggefallen():
+    alt = [_il(rufnummer="A", amount=50)]
+    neu = [_il(rufnummer="B", amount=50)]
+    d = analytics.invoice_diff(alt, neu)
+    assert d["weggefallen"] == ["A"] and d["neu"] == ["B"]
+
+
+def test_reconcile_zugeordnet_und_rest():
+    lines = [_il(rufnummer="A", amount=45), _il(rufnummer="B", amount=40),
+             _il(rufnummer=None, amount=-5)]
+    r = analytics.reconcile(lines, total_net=80.0)
+    assert round(r["zugeordnet"]) == 85
+    assert round(r["nicht_zugeordnet"]) == -5
+    assert r["anzahl_rufnummern"] == 2
+
+
+def test_datenauslastung_buckets():
+    lines = [
+        _il(category="info", amount=0, data_contracted_gb=80, data_used_gb=9),   # 11%
+        _il(category="info", amount=0, data_contracted_gb=80, data_used_gb=90),  # >100
+        _il(category="info", amount=0, data_contracted_gb=80, data_used_gb=4),   # 5%
+    ]
+    a = analytics.datenauslastung(lines)
+    assert a["anzahl"] == 3
+    assert a["ueber_100"] == 1
+    assert a["unter_25"] == 2
+    assert a["unter_10"] == 1
+
+
 def test_kosten_trend_je_periode():
     lines = [
         {"_period_start": "2026-05-01", "amount": 100, "rufnummer": "A"},

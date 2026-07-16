@@ -30,8 +30,11 @@ def client(app_store, make_report, make_invoice):
     return c
 
 
-def _upload_invoice(client, rufnummern=None, n=3, invoice_number="230000000001"):
-    path = client._make_invoice(rufnummern=rufnummern, n=n, invoice_number=invoice_number)
+def _upload_invoice(client, rufnummern=None, n=3, invoice_number="230000000001", period=None):
+    kw = {"rufnummern": rufnummern, "n": n, "invoice_number": invoice_number}
+    if period:
+        kw["period"] = period
+    path = client._make_invoice(**kw)
     with open(path, "rb") as f:
         return client.post("/api/invoices",
                            files={"file": (path.name, f.read(), "application/xml")})
@@ -221,6 +224,29 @@ def test_current_reichert_kosten_an(client):
     assert "netto_factor" in body
     c = [x for x in body["contracts"] if x["rufnummer"] == ruf][0]
     assert c["_kosten_netto"] is not None and c["_kosten_netto"] != 0
+
+
+def test_invoice_detail(client):
+    iid = _upload_invoice(client, rufnummern=["0151A", "0151B"], invoice_number="1").json()["invoice_id"]
+    body = client.get(f"/api/invoices/{iid}").json()
+    assert body["invoice"]["total_net"] > 0
+    assert "kategorie" in body and "kostenstelle" in body
+    assert "reconcile" in body and "datenauslastung" in body
+    assert body["diff"] is None  # keine Vorrechnung
+
+
+def test_invoice_detail_diff_vs_vormonat(client):
+    _upload_invoice(client, rufnummern=["0151A"], invoice_number="1", period=("2026-05-01", "2026-05-31"))
+    iid2 = _upload_invoice(client, rufnummern=["0151A"], invoice_number="2", period=("2026-06-01", "2026-06-30")).json()["invoice_id"]
+    body = client.get(f"/api/invoices/{iid2}").json()
+    assert body["diff"] is not None
+    assert "gesamt" in body["diff"]
+
+
+def test_costs_kostenstellen_je_invoice(client):
+    iid = _upload_invoice(client, rufnummern=["0151A", "0151B"], invoice_number="1").json()["invoice_id"]
+    r = client.get(f"/api/costs/kostenstellen?invoice_id={iid}")
+    assert r.status_code == 200 and len(r.json()) >= 1
 
 
 def test_costs_braucht_login(app_store):
