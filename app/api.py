@@ -171,12 +171,15 @@ def create_app(secret_key: str | None = None) -> FastAPI:
 
         norm = analytics.normalize_rufnummer
         latest = _latest_invoice(db)
-        kmap, brutto_factor, rechnung_stand, auslastung = {}, 1.19, None, None
+        kmap, brutto_factor, rechnung_stand, auslastung, util_map = {}, 1.19, None, None, {}
         if latest:
             lines = db.get_invoice_lines(latest["id"])
             # Kosten je Rufnummer, umgeschlüsselt auf normalisierte Rufnummer (Join)
             kmap = {norm(k): v for k, v in analytics.kosten_je_rufnummer(lines).items()}
             auslastung = analytics.datenauslastung(lines)
+            # Per-Vertrag-Datenauslastung (nur mit CSV-Rechnung: Datenzeilen tragen Rufnummer)
+            util_map = {norm(l["rufnummer"]): l for l in lines
+                        if l.get("data_contracted_gb") and l.get("rufnummer")}
             net, gross = latest.get("total_net") or 0, latest.get("total_gross") or 0
             if net:
                 brutto_factor = round(gross / net, 4)
@@ -187,6 +190,14 @@ def create_app(secret_key: str | None = None) -> FastAPI:
             c["_kosten_netto"] = round(k["netto"], 2) if k else None
             c["_rabatt"] = round(k["rabatt"], 2) if k else None
             c["_grundpreis"] = round(k["grundpreis"] + k["option"], 2) if k else None
+            um = util_map.get(norm(c.get("rufnummer")))
+            if um:
+                cg, ug = um["data_contracted_gb"], um.get("data_used_gb") or 0.0
+                c["_data_contracted_gb"] = round(cg, 1)
+                c["_data_used_gb"] = round(ug, 2)
+                c["_auslastung_pct"] = round(ug / cg * 100, 1) if cg else None
+            else:
+                c["_data_contracted_gb"] = c["_data_used_gb"] = c["_auslastung_pct"] = None
 
         return {"stand": stand or None, "rahmenvertraege": rvs, "contracts": fleet,
                 "netto_factor": 1.0, "brutto_factor": brutto_factor,
@@ -196,8 +207,8 @@ def create_app(secret_key: str | None = None) -> FastAPI:
     @app.post("/api/invoices", status_code=201, dependencies=[Depends(require_auth)])
     async def upload_invoice(file: UploadFile, db: Store = Depends(get_store)):
         safe_name = Path(file.filename or "").name
-        if not safe_name.lower().endswith(".xml"):
-            raise HTTPException(400, "Nur .xml-Rechnungen (XRechnung/UBL) werden akzeptiert.")
+        if not safe_name.lower().endswith((".xml", ".csv")):
+            raise HTTPException(400, "Nur Rechnungen (.xml XRechnung oder .csv) werden akzeptiert.")
         content = await file.read(config.MAX_UPLOAD_BYTES + 1)
         if len(content) > config.MAX_UPLOAD_BYTES:
             raise HTTPException(413, "Datei zu groß.")

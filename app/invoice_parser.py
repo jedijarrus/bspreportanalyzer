@@ -9,6 +9,7 @@ Kernpunkte (siehe Spec / Echtdaten-Analyse):
 """
 from __future__ import annotations
 
+import csv
 import re
 import xml.etree.ElementTree as ET
 from dataclasses import dataclass, field
@@ -94,7 +95,97 @@ def _line_props(line) -> dict[str, str]:
 
 
 def parse_invoice(path: str | Path) -> InvoiceData:
+    """Erkennt das Format an der Endung: .csv (Telekom-Positions-CSV) oder .xml (UBL)."""
     path = Path(path)
+    if path.suffix.lower() == ".csv":
+        return _parse_csv(path)
+    return _parse_xml(path)
+
+
+def _iso(d: str | None) -> str | None:
+    """'01.06.2026' -> '2026-06-01'."""
+    if not d:
+        return None
+    m = re.match(r"(\d{2})\.(\d{2})\.(\d{4})", d.strip())
+    return f"{m.group(3)}-{m.group(2)}-{m.group(1)}" if m else d
+
+
+def _de_num(s: str | None) -> float | None:
+    """Deutsches Zahlformat: '1.234,56' / '83.886.080' / '-17,43' -> float."""
+    if s is None or s.strip() == "":
+        return None
+    try:
+        return float(s.strip().replace(".", "").replace(",", "."))
+    except ValueError:
+        return None
+
+
+def _parse_csv(path: Path) -> InvoiceData:
+    with open(path, encoding="cp1252", newline="") as f:
+        rows = list(csv.reader(f, delimiter=";"))
+
+    header = next((r for r in rows if len(r) >= 34), [""] * 34)
+    invoice_number = header[0] or None
+    issue_date = _iso(header[1])
+    kundenkonto = header[5] or None
+    period_start, period_end = _iso(header[6]), _iso(header[7])
+    due_date = _iso(header[11]) if len(header) > 11 else None
+
+    lines: list[dict[str, Any]] = []
+    data_by_ruf: dict[str, dict[str, Any]] = {}
+
+    for r in rows:
+        if len(r) < 18:
+            continue
+        rufnummer = (r[5] or "").strip() or None
+        kostenstelle = (r[3] or "").strip() or None
+        nutzer = (r[4] or "").strip() or None
+        label = (r[10] or "").strip()
+        amount = _de_num(r[17]) if len(r) > 17 else None
+
+        if amount is not None:  # Kostenzeile
+            lines.append({
+                "rufnummer": rufnummer, "kostenstelle": kostenstelle,
+                "kostenstellennutzer": nutzer, "item_name": label,
+                "category": _classify(label, amount), "amount": amount,
+                "quantity": None, "price": None,
+                "period_start": _iso(r[14]) if len(r) > 14 else None,
+                "period_end": _iso(r[15]) if len(r) > 15 else None,
+                "data_contracted_gb": None, "data_used_gb": None,
+                "vertragsbeginn": None, "mindestlaufzeit_ende": None,
+            })
+        elif rufnummer and len(r) > 13 and r[12].strip():  # Datenvolumen-Zeile
+            gb = _to_gb(_de_num(r[12]), r[13])  # _de_num wegen Tausenderpunkten
+            d = data_by_ruf.setdefault(rufnummer, {
+                "rufnummer": rufnummer, "kostenstelle": kostenstelle,
+                "kostenstellennutzer": nutzer, "contracted": None, "used": None})
+            if "Vertraglich vereinbartes Datenvolumen" in label:
+                d["contracted"] = gb
+            elif "Insgesamt verbrauchtes Datenvolumen" in label:
+                d["used"] = gb
+
+    # eine zusammengefasste Datenzeile je Rufnummer (mit Verbrauch verlinkt)
+    for d in data_by_ruf.values():
+        lines.append({
+            "rufnummer": d["rufnummer"], "kostenstelle": d["kostenstelle"],
+            "kostenstellennutzer": d["kostenstellennutzer"],
+            "item_name": "Datenvolumen", "category": "info", "amount": 0.0,
+            "quantity": None, "price": None, "period_start": period_start,
+            "period_end": period_end, "data_contracted_gb": d["contracted"],
+            "data_used_gb": d["used"], "vertragsbeginn": None, "mindestlaufzeit_ende": None,
+        })
+
+    net = round(sum(l["amount"] for l in lines), 2)
+    tax = round(net * 0.19, 2)
+    return InvoiceData(
+        filename=path.name, invoice_number=invoice_number, kundenkonto=kundenkonto,
+        issue_date=issue_date, due_date=due_date, period_start=period_start,
+        period_end=period_end, total_net=net, total_tax=tax, total_gross=round(net + tax, 2),
+        lines=lines,
+    )
+
+
+def _parse_xml(path: Path) -> InvoiceData:
     root = ET.parse(path).getroot()
 
     # Kopf

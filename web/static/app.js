@@ -12,6 +12,7 @@ const FACETS = [
   { key: "tarif", label: "Tarif", kind: "single" },
   { key: "kartentyp", label: "Kartentyp", kind: "single" },
   { key: "__multisim", label: "MultiSIM", kind: "derived", fn: (c) => [multisimBucket(c)] },
+  { key: "__auslastung", label: "Datenauslastung", kind: "derived", fn: (c) => [auslastungBucket(c._auslastung_pct)] },
   { key: "__status", label: "Status", kind: "derived", fn: (c) => [c.sperren ? "Gesperrt" : "Aktiv"] },
   { key: "__bindefrist", label: "Bindefrist", kind: "derived", fn: (c) => [bucket(c.bindefristende)] },
   { key: "vvl_berechtigung", label: "VVL-Berechtigung", kind: "single" },
@@ -42,10 +43,20 @@ const CHARTS = [
   { id: "roaming_optionen", title: "Roaming-Optionen", type: "bar" },
 ];
 
-const GRID_COLS = ["rufnummer", "rahmenvertrag", "kostenstellennutzer", "kostenstelle", "tarif", "_kosten_netto", "_rabatt", "bindefristende", "__status", "vvl_berechtigung"];
+const GRID_COLS = ["rufnummer", "rahmenvertrag", "kostenstellennutzer", "kostenstelle", "tarif", "_kosten_netto", "_rabatt", "_auslastung_pct", "bindefristende", "__status", "vvl_berechtigung"];
 const MONEY_COLS = new Set(["_kosten_netto", "_rabatt"]);
 const COL_LABEL = { __status: "Status", __bindefrist: "Bindefrist", __multisim: "MultiSIM",
-  _kosten_netto: "Monatskosten", _rabatt: "Rabatt", __kosten: "Monatskosten", __rabatt: "Rabatt" };
+  _kosten_netto: "Monatskosten", _rabatt: "Rabatt", _auslastung_pct: "Datenauslastung",
+  __kosten: "Monatskosten", __rabatt: "Rabatt", __auslastung: "Datenauslastung" };
+const AUSLASTUNG_ORDER = ["< 10 %", "10–25 %", "25–50 %", "50–100 %", "> 100 %", "keine"];
+function auslastungBucket(p) {
+  if (p == null) return "keine";
+  if (p < 10) return "< 10 %";
+  if (p < 25) return "10–25 %";
+  if (p < 50) return "25–50 %";
+  if (p <= 100) return "50–100 %";
+  return "> 100 %";
+}
 const MS_ORDER = ["ohne", "1", "2", "3+"];
 
 const state = {
@@ -286,6 +297,7 @@ function renderFacets() {
     if (f.key === "__bindefrist") counts.sort((a, b) => BUCKET_ORDER.indexOf(a[0]) - BUCKET_ORDER.indexOf(b[0]));
     if (f.key === "__multisim") counts.sort((a, b) => MS_ORDER.indexOf(a[0]) - MS_ORDER.indexOf(b[0]));
     if (f.key === "__kosten") counts.sort((a, b) => KOSTEN_ORDER.indexOf(a[0]) - KOSTEN_ORDER.indexOf(b[0]));
+    if (f.key === "__auslastung") counts.sort((a, b) => AUSLASTUNG_ORDER.indexOf(a[0]) - AUSLASTUNG_ORDER.indexOf(b[0]));
     const sel = state.filters[f.key] || new Set();
     const items = counts.slice(0, 12).map(([v, n]) =>
       `<li class="${sel.has(v) ? "on" : ""}" data-facet="${esc(f.key)}" data-val="${esc(v)}">
@@ -323,6 +335,12 @@ function renderGrid(rows) {
 function gridCell(c, col) {
   if (col === "bindefristende") return bindefristBadge(c.bindefristende);
   if (col === "__status") return c.sperren ? '<span class="badge red">gesperrt</span>' : '<span class="badge green">aktiv</span>';
+  if (col === "_auslastung_pct") {
+    const p = c._auslastung_pct;
+    if (p == null) return '<span class="muted">–</span>';
+    const cls = p < 40 ? "low" : p <= 100 ? "mid" : "high";
+    return `<div class="row-meter"><div class="mini-meter"><div class="mini-fill ${cls}" style="width:${Math.min(100, p)}%"></div></div><span class="mini-pct">${p}%</span></div>`;
+  }
   if (MONEY_COLS.has(col)) return c[col] == null ? "–" : money(c[col]);
   return esc(c[col]);
 }
@@ -368,7 +386,11 @@ function openDrawer(contract) {
      <div class="dg" id="drawerKosten"><h4>Kosten (Monat)</h4>
        ${contract._kosten_netto != null ? '<div class="hint">lade …</div>'
          : '<div class="hint">keine Rechnungsdaten für diese Rufnummer</div>'}
-     </div>${html}`;
+     </div>
+     ${contract._auslastung_pct != null ? `<div class="dg"><h4>Datenauslastung</h4>
+       <div class="dl"><span>genutzt / gebucht</span><b>${contract._data_used_gb} / ${contract._data_contracted_gb} GB</b></div>
+       <div class="row-meter"><div class="mini-meter" style="max-width:none"><div class="mini-fill ${contract._auslastung_pct < 40 ? "low" : contract._auslastung_pct <= 100 ? "mid" : "high"}" style="width:${Math.min(100, contract._auslastung_pct)}%"></div></div><span class="mini-pct">${contract._auslastung_pct}%</span></div>
+     </div>` : ""}${html}`;
   document.getElementById("drawer").hidden = false;
   document.getElementById("drawerOverlay").hidden = false;
   if (contract._kosten_netto != null) loadDrawerKosten(contract.rufnummer);
@@ -719,11 +741,11 @@ document.getElementById("search").addEventListener("input", (e) => { state.searc
 
 document.getElementById("fileInput").addEventListener("change", async (e) => {
   const file = e.target.files[0]; if (!file) return;
-  const isXml = file.name.toLowerCase().endsWith(".xml");
+  const isInvoice = /\.(xml|csv)$/i.test(file.name);
   const fd = new FormData(); fd.append("file", file);
   try {
-    const r = await api(isXml ? "/api/invoices" : "/api/reports", { method: "POST", body: fd });
-    toast(isXml ? `Rechnung: ${r.line_count} Positionen` : `Report: ${r.row_count} Verträge`);
+    const r = await api(isInvoice ? "/api/invoices" : "/api/reports", { method: "POST", body: fd });
+    toast(isInvoice ? `Rechnung: ${r.line_count} Positionen` : `Report: ${r.row_count} Verträge`);
     await loadData();
   } catch (err) { toast("Upload fehlgeschlagen: " + err.message, true); }
   e.target.value = "";

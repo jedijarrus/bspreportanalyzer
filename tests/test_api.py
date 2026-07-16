@@ -20,13 +20,14 @@ def app_store(tmp_path, monkeypatch):
 
 
 @pytest.fixture
-def client(app_store, make_report, make_invoice):
+def client(app_store, make_report, make_invoice, make_invoice_csv):
     """Authentifizierter Client (Passwort gesetzt + eingeloggt)."""
     app, s = app_store
     c = TestClient(app)
     c.post("/api/auth/setup", json={"password": PW})
     c._make_report = make_report
     c._make_invoice = make_invoice
+    c._make_invoice_csv = make_invoice_csv
     return c
 
 
@@ -247,6 +248,18 @@ def test_costs_kostenstellen_je_invoice(client):
     iid = _upload_invoice(client, rufnummern=["0151A", "0151B"], invoice_number="1").json()["invoice_id"]
     r = client.get(f"/api/costs/kostenstellen?invoice_id={iid}")
     assert r.status_code == 200 and len(r.json()) >= 1
+
+
+def test_csv_upload_und_auslastung_pro_vertrag(client):
+    _upload(client, rows=3)
+    ruf = client.get("/api/current").json()["contracts"][0]["rufnummer"]
+    path = client._make_invoice_csv(rufnummern=[ruf])
+    with open(path, "rb") as f:
+        r = client.post("/api/invoices", files={"file": (path.name, f.read(), "text/csv")})
+    assert r.status_code == 201
+    c = [x for x in client.get("/api/current").json()["contracts"] if x["rufnummer"] == ruf][0]
+    assert c["_auslastung_pct"] is not None       # <- CSV schaltet Auslastung pro Vertrag frei
+    assert c["_data_contracted_gb"] and c["_data_used_gb"] is not None
 
 
 def test_costs_braucht_login(app_store):
