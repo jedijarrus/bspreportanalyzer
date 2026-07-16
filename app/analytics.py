@@ -220,6 +220,65 @@ def kosten_je_kategorie(lines: list[dict]) -> list[tuple[str, float]]:
     return sorted(agg.items(), key=lambda x: -abs(x[1]))
 
 
+def _netto_map(lines: list[dict], key: str) -> dict[str, float]:
+    m: dict[str, float] = {}
+    for l in lines:
+        k = l.get(key)
+        if k is None:
+            continue
+        m[k] = m.get(k, 0.0) + _amt(l)
+    return m
+
+
+def invoice_diff(alt: list[dict], neu: list[dict]) -> dict:
+    """Vergleich zweier Rechnungen: Δ netto gesamt, je Kostenstelle/Kategorie/
+    Rufnummer (größte Änderungen zuerst) + neu/weggefallen."""
+    def deltas(key):
+        a, n = _netto_map(alt, key), _netto_map(neu, key)
+        rows = [{key: k, "alt": round(a.get(k, 0.0), 2), "neu": round(n.get(k, 0.0), 2),
+                 "delta": round(n.get(k, 0.0) - a.get(k, 0.0), 2)}
+                for k in set(a) | set(n)]
+        rows.sort(key=lambda r: -abs(r["delta"]))
+        return rows
+
+    a_ruf, n_ruf = _netto_map(alt, "rufnummer"), _netto_map(neu, "rufnummer")
+    return {
+        "gesamt": {"alt": round(sum(a_ruf.values()) + sum(_amt(l) for l in alt if not l.get("rufnummer")), 2),
+                   "neu": round(sum(n_ruf.values()) + sum(_amt(l) for l in neu if not l.get("rufnummer")), 2),
+                   "delta": round(sum(_amt(l) for l in neu) - sum(_amt(l) for l in alt), 2)},
+        "je_kostenstelle": deltas("kostenstelle"),
+        "je_kategorie": deltas("category"),
+        "je_rufnummer": deltas("rufnummer"),
+        "neu": sorted(set(n_ruf) - set(a_ruf)),
+        "weggefallen": sorted(set(a_ruf) - set(n_ruf)),
+    }
+
+
+def reconcile(lines: list[dict], total_net: float) -> dict:
+    """Abgleich: zugeordnete Kosten (mit Rufnummer) vs. nicht zugeordnet vs. Rechnungs-Netto."""
+    zug = sum(_amt(l) for l in lines if l.get("rufnummer"))
+    nicht = sum(_amt(l) for l in lines if not l.get("rufnummer"))
+    rufs = {l["rufnummer"] for l in lines if l.get("rufnummer")}
+    return {
+        "zugeordnet": round(zug, 2), "nicht_zugeordnet": round(nicht, 2),
+        "anzahl_rufnummern": len(rufs), "total_net": round(total_net, 2),
+        "differenz": round(total_net - (zug + nicht), 2),
+    }
+
+
+def datenauslastung(lines: list[dict]) -> dict:
+    """Aggregierte Datenauslastung: verbraucht vs. vereinbart."""
+    rows = [(l["data_contracted_gb"], l.get("data_used_gb") or 0.0)
+            for l in lines if l.get("data_contracted_gb")]
+    n = len(rows)
+    return {
+        "anzahl": n,
+        "ueber_100": sum(1 for c, u in rows if u > c),
+        "unter_25": sum(1 for c, u in rows if c and u < 0.25 * c),
+        "unter_10": sum(1 for c, u in rows if c and u < 0.10 * c),
+    }
+
+
 def kosten_trend(lines: list[dict]) -> list[dict]:
     """Netto-Kosten je Rechnungsperiode (aus _period_start), chronologisch."""
     agg: dict[str, float] = {}

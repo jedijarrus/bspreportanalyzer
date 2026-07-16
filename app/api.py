@@ -222,10 +222,35 @@ def create_app(secret_key: str | None = None) -> FastAPI:
         db.delete_invoice(invoice_id)
         return Response(status_code=204)
 
+    @app.get("/api/invoices/{invoice_id}", dependencies=[Depends(require_auth)])
+    def invoice_detail(invoice_id: int, db: Store = Depends(get_store)):
+        invs = {i["id"]: i for i in db.list_invoices()}
+        inv = invs.get(invoice_id)
+        if not inv:
+            raise HTTPException(404, "Rechnung nicht gefunden.")
+        lines = db.get_invoice_lines(invoice_id)
+        top = sorted(analytics.kosten_je_rufnummer(lines).items(),
+                     key=lambda kv: -kv[1]["netto"])[:10]
+        # Vorrechnung (nach Periode) für Δ
+        ordered = sorted(invs.values(), key=lambda i: (i.get("period_start") or "", i["id"]))
+        pos = [i["id"] for i in ordered].index(invoice_id)
+        prev = ordered[pos - 1] if pos > 0 else None
+        diff = analytics.invoice_diff(db.get_invoice_lines(prev["id"]), lines) if prev else None
+        return {
+            "invoice": inv,
+            "kategorie": analytics.kosten_je_kategorie(lines),
+            "kostenstelle": analytics.kosten_je_kostenstelle(lines),
+            "reconcile": analytics.reconcile(lines, inv.get("total_net") or 0.0),
+            "datenauslastung": analytics.datenauslastung(lines),
+            "top_treiber": [{"rufnummer": r, **v} for r, v in top],
+            "diff": diff,
+            "prev_period": prev.get("period_start") if prev else None,
+        }
+
     @app.get("/api/costs/kostenstellen", dependencies=[Depends(require_auth)])
-    def costs_kostenstellen(db: Store = Depends(get_store)):
-        latest = _latest_invoice(db)
-        lines = db.get_invoice_lines(latest["id"]) if latest else []
+    def costs_kostenstellen(invoice_id: int | None = None, db: Store = Depends(get_store)):
+        inv = {i["id"]: i for i in db.list_invoices()}.get(invoice_id) if invoice_id else _latest_invoice(db)
+        lines = db.get_invoice_lines(inv["id"]) if inv else []
         return analytics.kosten_je_kostenstelle(lines)
 
     @app.get("/api/costs/trend", dependencies=[Depends(require_auth)])
