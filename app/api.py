@@ -253,6 +253,7 @@ def create_app(secret_key: str | None = None) -> FastAPI:
             "kostenstelle": analytics.kosten_je_kostenstelle(lines),
             "reconcile": analytics.reconcile(lines, inv.get("total_net") or 0.0),
             "datenauslastung": analytics.datenauslastung(lines),
+            "auslastung_liste": analytics.datenauslastung_liste(lines),
             "je_rahmenvertrag": sorted(rv_agg.values(), key=lambda x: -x["netto"]),
             "top_treiber": [{"rufnummer": r, "netto": v["netto"], "rabatt": v["rabatt"],
                              "nutzer": (cmap.get(norm(r)) or {}).get("kostenstellennutzer")}

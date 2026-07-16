@@ -124,6 +124,14 @@ select { padding: 8px 10px; border: 1px solid var(--line); border-radius: 8px; f
 .meter-fill.mid { background: #10b981; }
 .meter-fill.high { background: #ef4444; }
 .usage-foot { font-size: 12px; margin-top: 6px; }
+/* Mini-Auslastungsbalken je Zeile */
+.row-meter { display: flex; align-items: center; gap: 8px; }
+.mini-meter { flex: 1; height: 8px; background: #eef2f7; border-radius: 999px; overflow: hidden; max-width: 220px; }
+.mini-fill { height: 100%; border-radius: 999px; }
+.mini-fill.low { background: #f59e0b; }
+.mini-fill.mid { background: #10b981; }
+.mini-fill.high { background: #ef4444; }
+.mini-pct { font-variant-numeric: tabular-nums; font-size: 12px; min-width: 42px; }
 
 /* Handlungsbedarf */
 .action-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(190px, 1fr)); gap: 12px; }

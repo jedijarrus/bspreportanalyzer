@@ -284,6 +284,21 @@ def datenauslastung(lines: list[dict]) -> dict:
     }
 
 
+def datenauslastung_liste(lines: list[dict]) -> list[dict]:
+    """Je Datenzeile: gebucht/verbraucht/Auslastung%, aufsteigend (schlechteste zuerst).
+    Anonym — die Zeilen tragen keine Rufnummer."""
+    rows = []
+    for l in lines:
+        c = l.get("data_contracted_gb")
+        if not c:
+            continue
+        u = l.get("data_used_gb") or 0.0
+        rows.append({"gebucht_gb": round(c, 1), "verbraucht_gb": round(u, 2),
+                     "pct": round(u / c * 100, 1) if c else 0.0})
+    rows.sort(key=lambda r: r["pct"])
+    return rows
+
+
 def kosten_trend(lines: list[dict]) -> list[dict]:
     """Netto-Kosten je Rechnungsperiode (aus _period_start), chronologisch."""
     agg: dict[str, float] = {}

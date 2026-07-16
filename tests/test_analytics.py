@@ -255,6 +255,19 @@ def test_datenauslastung_buckets():
     assert round(a["auslastung_pct"]) == 43      # 103/240
 
 
+def test_datenauslastung_liste_sortiert():
+    lines = [
+        _il(data_contracted_gb=80, data_used_gb=40),  # 50%
+        _il(data_contracted_gb=80, data_used_gb=4),    # 5%
+        _il(data_contracted_gb=80, data_used_gb=90),   # 112%
+        _il(data_contracted_gb=None),                  # ignoriert
+    ]
+    liste = analytics.datenauslastung_liste(lines)
+    assert len(liste) == 3
+    assert [round(r["pct"]) for r in liste] == [5, 50, 112]  # aufsteigend
+    assert liste[0]["gebucht_gb"] == 80 and liste[0]["verbraucht_gb"] == 4
+
+
 def test_kosten_trend_je_periode():
     lines = [
         {"_period_start": "2026-05-01", "amount": 100, "rufnummer": "A"},
