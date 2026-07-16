@@ -337,10 +337,7 @@ function openDrawer(contract) {
        <button class="btn" id="noteSave">Notiz speichern</button>
      </div>
      <div class="dg" id="drawerKosten"><h4>Kosten (Monat)</h4>
-       ${contract._kosten_netto != null
-         ? `<div class="dl"><span>Netto</span><b>${money(contract._kosten_netto)}</b></div>
-            <div class="dl"><span>davon Rabatt</span><b>${money(contract._rabatt)}</b></div>
-            <div id="drawerKostenLines" class="hint">lade Positionen …</div>`
+       ${contract._kosten_netto != null ? '<div class="hint">lade …</div>'
          : '<div class="hint">keine Rechnungsdaten für diese Rufnummer</div>'}
      </div>${html}`;
   document.getElementById("drawer").hidden = false;
@@ -351,12 +348,21 @@ function openDrawer(contract) {
 async function loadDrawerKosten(rufnummer) {
   try {
     const lines = await api(`/api/costs/lines/${encodeURIComponent(rufnummer)}`);
-    const box = document.getElementById("drawerKostenLines");
+    const box = document.getElementById("drawerKosten");
     if (!box) return;
-    const rows = lines.filter((l) => l.amount).map((l) =>
+    const sum = (cat) => lines.filter((l) => l.category === cat).reduce((a, l) => a + (l.amount || 0), 0);
+    const grund = sum("grundpreis"), opt = sum("option"), verb = sum("verbrauch"), rab = sum("rabatt");
+    const netto = grund + opt + verb + rab;
+    const row = (lbl, val, cls = "") => `<div class="krow ${cls}"><span>${lbl}</span><b>${money(val)}</b></div>`;
+    let bd = row("Grundpreis", grund);
+    if (opt) bd += row("Optionen", opt);
+    if (verb) bd += row("Verbrauch", verb);
+    if (rab) bd += row("Rabatt", rab, "rabatt");
+    bd += row("Effektiv (netto)", netto, "total");
+    const items = lines.filter((l) => l.amount).map((l) =>
       `<div class="dl"><span>${esc(l.item_name)} <span class="cat cat-${esc(l.category)}">${esc(l.category)}</span></span><b>${money(l.amount)}</b></div>`).join("");
-    box.classList.remove("hint");
-    box.innerHTML = rows || '<span class="hint">keine Einzelpositionen</span>';
+    box.innerHTML = `<h4>Kosten (Monat)</h4>${bd}` +
+      (items ? `<details class="kitems"><summary>Einzelpositionen (${lines.filter((l) => l.amount).length})</summary>${items}</details>` : "");
   } catch (e) { /* Drawer bleibt nutzbar */ }
 }
 function closeDrawer() {
