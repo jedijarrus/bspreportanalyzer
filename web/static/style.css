@@ -138,6 +138,17 @@ td.money, th.money { text-align: right; font-variant-numeric: tabular-nums; whit
 .cat-grundpreis { background: #fdeaf3; color: var(--magenta-dark); }
 .cat-option { background: #e0e7ff; color: #3730a3; }
 
+/* Kosten-Aufschlüsselung im Drawer (Waterfall) */
+.krow { display: flex; justify-content: space-between; padding: 5px 0; font-size: 13px; }
+.krow b { font-variant-numeric: tabular-nums; }
+.krow.rabatt b { color: #166534; }
+.krow.total { border-top: 2px solid var(--line); margin-top: 4px; padding-top: 9px; font-size: 15px; }
+.krow.total span { font-weight: 600; }
+.krow.total b { font-weight: 700; color: var(--magenta); font-size: 17px; }
+.kitems { margin-top: 10px; }
+.kitems summary { cursor: pointer; font-size: 12px; color: var(--muted); padding: 4px 0; }
+.kitems .dl { font-size: 12px; }
+
 .modal-box.modal-wide { width: 920px; }
 .modal-box h3 { margin: 18px 0 4px; font-size: 14px; }
 
