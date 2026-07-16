@@ -11,6 +11,7 @@ sys.path.insert(0, str(ROOT))
 
 from fixtures.fake_report_generator import generate_report  # noqa: E402
 from fixtures.fake_invoice_generator import generate_invoice  # noqa: E402
+from fixtures.fake_invoice_csv_generator import generate_invoice_csv  # noqa: E402
 
 
 @pytest.fixture
@@ -34,5 +35,16 @@ def make_invoice(tmp_path):
         path = tmp_path / fname
         generate_invoice(path, rufnummern=rufnummern, n=n, seed=seed,
                          invoice_number=invoice_number, period=period, issue_date=issue_date)
+        return path
+    return _make
+
+
+@pytest.fixture
+def make_invoice_csv(tmp_path):
+    """Factory: synthetische Rechnungs-CSV (Telekom-Format)."""
+    def _make(rufnummern=None, n=5, seed=0, invoice_number="230000000001", name=None):
+        fname = name or f"Rechnung_{invoice_number}.csv"
+        path = tmp_path / fname
+        generate_invoice_csv(path, rufnummern=rufnummern, n=n, seed=seed, invoice_number=invoice_number)
         return path
     return _make
