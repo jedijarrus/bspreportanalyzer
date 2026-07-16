@@ -18,6 +18,14 @@ from app.parser import ReportData
 _CONTRACT_COLS = ", ".join(f'"{f}" TEXT' for f in schema.FIELDS)
 _CONTRACT_FIELDS = list(schema.FIELDS)
 
+# Spalten einer Rechnungsposition (Reihenfolge = Werte-Reihenfolge beim Insert)
+_INVOICE_LINE_COLS = [
+    "rufnummer", "kostenstelle", "kostenstellennutzer", "item_name", "category",
+    "amount", "quantity", "price", "period_start", "period_end",
+    "data_contracted_gb", "data_used_gb", "vertragsbeginn", "mindestlaufzeit_ende",
+]
+_INVOICE_LINE_NUM = {"amount", "quantity", "price", "data_contracted_gb", "data_used_gb"}
+
 
 class Store:
     def __init__(self, db_path: str | Path):
@@ -64,6 +72,38 @@ class Store:
         self.con.execute(
             "CREATE TABLE IF NOT EXISTS notes (key TEXT PRIMARY KEY, note TEXT NOT NULL)"
         )
+        # Rechnungen (XRechnung) + Positionen
+        self.con.execute(
+            """
+            CREATE TABLE IF NOT EXISTS invoices (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                filename TEXT NOT NULL,
+                invoice_number TEXT,
+                kundenkonto TEXT,
+                issue_date TEXT,
+                due_date TEXT,
+                period_start TEXT,
+                period_end TEXT,
+                total_net REAL,
+                total_tax REAL,
+                total_gross REAL,
+                line_count INTEGER NOT NULL,
+                imported_at TEXT NOT NULL
+            )
+            """
+        )
+        self.con.execute(
+            f"""
+            CREATE TABLE IF NOT EXISTS invoice_lines (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                invoice_id INTEGER NOT NULL REFERENCES invoices(id) ON DELETE CASCADE,
+                {", ".join(f'"{c}" {"REAL" if c in _INVOICE_LINE_NUM else "TEXT"}' for c in _INVOICE_LINE_COLS)}
+            )
+            """
+        )
+        self.con.execute("CREATE INDEX IF NOT EXISTS idx_il_invoice ON invoice_lines(invoice_id)")
+        self.con.execute("CREATE INDEX IF NOT EXISTS idx_il_rufnummer ON invoice_lines(rufnummer)")
+        self.con.execute("CREATE INDEX IF NOT EXISTS idx_il_kostenstelle ON invoice_lines(kostenstelle)")
         self.con.commit()
 
     # ---- Notizen --------------------------------------------------------
@@ -162,6 +202,65 @@ class Store:
             d.pop("id", None)
             result.append(d)
         return result
+
+    # ---- Rechnungen -----------------------------------------------------
+    def add_invoice(self, data) -> int:
+        cur = self.con.execute(
+            "INSERT INTO invoices (filename, invoice_number, kundenkonto, issue_date, "
+            "due_date, period_start, period_end, total_net, total_tax, total_gross, "
+            "line_count, imported_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)",
+            (data.filename, data.invoice_number, data.kundenkonto, data.issue_date,
+             data.due_date, data.period_start, data.period_end, data.total_net,
+             data.total_tax, data.total_gross, len(data.lines),
+             dt.datetime.now().isoformat(timespec="seconds")),
+        )
+        invoice_id = cur.lastrowid
+        cols = ", ".join(f'"{c}"' for c in _INVOICE_LINE_COLS)
+        ph = ", ".join("?" * (len(_INVOICE_LINE_COLS) + 1))
+        self.con.executemany(
+            f"INSERT INTO invoice_lines (invoice_id, {cols}) VALUES ({ph})",
+            [(invoice_id, *[line.get(c) for c in _INVOICE_LINE_COLS]) for line in data.lines],
+        )
+        self.con.commit()
+        return invoice_id
+
+    def list_invoices(self) -> list[dict[str, Any]]:
+        rows = self.con.execute(
+            "SELECT id, filename, invoice_number, issue_date, period_start, period_end, "
+            "total_net, total_tax, total_gross, line_count, imported_at "
+            "FROM invoices ORDER BY period_start, id"
+        ).fetchall()
+        return [dict(r) for r in rows]
+
+    def get_invoice_lines(self, invoice_id: int) -> list[dict[str, Any]]:
+        rows = self.con.execute(
+            "SELECT * FROM invoice_lines WHERE invoice_id = ? ORDER BY id", (invoice_id,)
+        ).fetchall()
+        out = []
+        for r in rows:
+            d = dict(r)
+            d.pop("id", None)
+            d.pop("invoice_id", None)
+            out.append(d)
+        return out
+
+    def all_invoice_lines(self) -> list[dict[str, Any]]:
+        """Alle Positionen über alle Rechnungen, angereichert mit Rechnungs-Meta."""
+        rows = self.con.execute(
+            "SELECT il.*, i.period_start AS _period_start, i.period_end AS _period_end, "
+            "i.issue_date AS _issue_date FROM invoice_lines il JOIN invoices i ON i.id = il.invoice_id"
+        ).fetchall()
+        out = []
+        for r in rows:
+            d = dict(r)
+            d["_invoice_id"] = d.pop("invoice_id")
+            d.pop("id", None)
+            out.append(d)
+        return out
+
+    def delete_invoice(self, invoice_id: int) -> None:
+        self.con.execute("DELETE FROM invoices WHERE id = ?", (invoice_id,))
+        self.con.commit()
 
     def delete_report(self, report_id: int) -> None:
         self.con.execute("DELETE FROM reports WHERE id = ?", (report_id,))

@@ -10,6 +10,7 @@ zusätzlich datetime/date.
 from __future__ import annotations
 
 import datetime as dt
+import re
 from collections import Counter
 from typing import Any
 
@@ -154,6 +155,78 @@ def diff(old: list[dict], new: list[dict], key: str = "rufnummer",
             geaendert.append({"rufnummer": k, "aenderungen": aenderungen})
 
     return {"hinzugefuegt": hinzugefuegt, "entfernt": entfernt, "geaendert": geaendert}
+
+
+# ---- Rufnummer-Normalisierung --------------------------------------------
+def normalize_rufnummer(r: Any) -> str | None:
+    """Rufnummer auf einheitliche Form bringen (Join Report <-> Rechnung).
+
+    Vereinheitlicht Trennzeichen und Länderpräfix: Report liefert z. B. das
+    49er-Präfix ohne Plus, die Rechnung '+49-…' mit Trennstrichen. Ergebnis:
+    nur Ziffern mit führender '0' statt '49'.
+    """
+    if r is None or r == "":
+        return None
+    d = re.sub(r"\D", "", str(r))
+    if d.startswith("0049"):
+        d = d[2:]
+    if d.startswith("49"):
+        d = "0" + d[2:]
+    return d or None
+
+
+# ---- Rechnungs-/Kostenauswertungen ---------------------------------------
+def _amt(line: dict) -> float:
+    v = line.get("amount")
+    return float(v) if v is not None else 0.0
+
+
+def kosten_je_rufnummer(lines: list[dict]) -> dict[str, dict[str, float]]:
+    """Kosten je Rufnummer: netto + Aufschlüsselung nach Kategorie."""
+    out: dict[str, dict[str, float]] = {}
+    for l in lines:
+        ruf = l.get("rufnummer")
+        if not ruf:
+            continue
+        d = out.setdefault(ruf, {"netto": 0.0, "grundpreis": 0.0, "option": 0.0,
+                                 "rabatt": 0.0, "verbrauch": 0.0})
+        a = _amt(l)
+        d["netto"] += a
+        cat = l.get("category")
+        if cat in d:
+            d[cat] += a
+    return out
+
+
+def kosten_je_kostenstelle(lines: list[dict]) -> list[dict]:
+    """Kosten je Kostenstelle (netto) + Anzahl unterschiedlicher Rufnummern."""
+    agg: dict[str, dict] = {}
+    for l in lines:
+        kst = l.get("kostenstelle") or "(ohne)"
+        d = agg.setdefault(kst, {"kostenstelle": kst, "netto": 0.0, "_rufs": set()})
+        d["netto"] += _amt(l)
+        if l.get("rufnummer"):
+            d["_rufs"].add(l["rufnummer"])
+    result = [{"kostenstelle": d["kostenstelle"], "netto": d["netto"],
+               "anzahl_rufnummern": len(d["_rufs"])} for d in agg.values()]
+    result.sort(key=lambda x: -x["netto"])
+    return result
+
+
+def kosten_je_kategorie(lines: list[dict]) -> list[tuple[str, float]]:
+    agg: dict[str, float] = {}
+    for l in lines:
+        agg[l.get("category") or "?"] = agg.get(l.get("category") or "?", 0.0) + _amt(l)
+    return sorted(agg.items(), key=lambda x: -abs(x[1]))
+
+
+def kosten_trend(lines: list[dict]) -> list[dict]:
+    """Netto-Kosten je Rechnungsperiode (aus _period_start), chronologisch."""
+    agg: dict[str, float] = {}
+    for l in lines:
+        p = l.get("_period_start") or l.get("period_start") or ""
+        agg[p] = agg.get(p, 0.0) + _amt(l)
+    return [{"period": p, "netto": v} for p, v in sorted(agg.items())]
 
 
 # ---- Trend ---------------------------------------------------------------

@@ -10,6 +10,7 @@ import secrets
 DATA_DIR = Path(os.environ.get("BSP_DATA_DIR", "data"))
 DB_PATH = Path(os.environ.get("BSP_DB_PATH", DATA_DIR / "app.db"))
 UPLOAD_DIR = Path(os.environ.get("BSP_UPLOAD_DIR", DATA_DIR / "uploads"))
+INVOICE_DIR = Path(os.environ.get("BSP_INVOICE_DIR", DATA_DIR / "rechnungen"))
 
 # Maximale Upload-Größe (Schutz gegen OOM / Zip-Bomb). Default 25 MB.
 MAX_UPLOAD_BYTES = int(os.environ.get("BSP_MAX_UPLOAD_MB", "25")) * 1024 * 1024

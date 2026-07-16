@@ -20,13 +20,21 @@ def app_store(tmp_path, monkeypatch):
 
 
 @pytest.fixture
-def client(app_store, make_report):
+def client(app_store, make_report, make_invoice):
     """Authentifizierter Client (Passwort gesetzt + eingeloggt)."""
     app, s = app_store
     c = TestClient(app)
     c.post("/api/auth/setup", json={"password": PW})
     c._make_report = make_report
+    c._make_invoice = make_invoice
     return c
+
+
+def _upload_invoice(client, rufnummern=None, n=3, invoice_number="230000000001"):
+    path = client._make_invoice(rufnummern=rufnummern, n=n, invoice_number=invoice_number)
+    with open(path, "rb") as f:
+        return client.post("/api/invoices",
+                           files={"file": (path.name, f.read(), "application/xml")})
 
 
 def _upload(client, rows=10, seed=0, name=None):
@@ -168,6 +176,57 @@ def test_notes_braucht_login(app_store):
     app, _ = app_store
     TestClient(app).post("/api/auth/setup", json={"password": PW})
     assert TestClient(app).get("/api/notes").status_code == 401
+
+
+# ---- Rechnungen / Kosten -------------------------------------------------
+def test_invoice_upload(client):
+    r = _upload_invoice(client, rufnummern=["0151A", "0151B"])
+    assert r.status_code == 201
+    assert r.json()["line_count"] > 0
+
+
+def test_invoice_upload_non_xml_abgelehnt(client):
+    r = client.post("/api/invoices", files={"file": ("x.txt", b"hallo", "text/plain")})
+    assert r.status_code == 400
+
+
+def test_invoices_liste(client):
+    _upload_invoice(client, rufnummern=["0151A"])
+    assert len(client.get("/api/invoices").json()) == 1
+
+
+def test_invoice_loeschen(client):
+    iid = _upload_invoice(client, rufnummern=["0151A"]).json()["invoice_id"]
+    assert client.delete(f"/api/invoices/{iid}").status_code == 204
+    assert client.get("/api/invoices").json() == []
+
+
+def test_costs_kostenstellen(client):
+    _upload_invoice(client, rufnummern=["0151A", "0151B", "0151C"])
+    r = client.get("/api/costs/kostenstellen")
+    assert r.status_code == 200 and len(r.json()) >= 1
+
+
+def test_costs_trend(client):
+    _upload_invoice(client, rufnummern=["0151A"], invoice_number="1")
+    r = client.get("/api/costs/trend")
+    assert r.status_code == 200 and len(r.json()) >= 1
+
+
+def test_current_reichert_kosten_an(client):
+    _upload(client, rows=3)
+    ruf = client.get("/api/current").json()["contracts"][0]["rufnummer"]
+    _upload_invoice(client, rufnummern=[ruf])
+    body = client.get("/api/current").json()
+    assert "netto_factor" in body
+    c = [x for x in body["contracts"] if x["rufnummer"] == ruf][0]
+    assert c["_kosten_netto"] is not None and c["_kosten_netto"] != 0
+
+
+def test_costs_braucht_login(app_store):
+    app, _ = app_store
+    TestClient(app).post("/api/auth/setup", json={"password": PW})
+    assert TestClient(app).get("/api/costs/trend").status_code == 401
 
 
 def test_current_braucht_login(app_store):

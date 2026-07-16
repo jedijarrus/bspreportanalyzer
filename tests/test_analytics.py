@@ -158,6 +158,70 @@ def test_diff_keine_aenderung():
 
 
 # ---- Trend ---------------------------------------------------------------
+# ---- Rufnummer-Normalisierung (Join Report <-> Rechnung) -----------------
+def test_normalize_rufnummer_vereinheitlicht_formate():
+    a = analytics.normalize_rufnummer("+49-151-2345678")
+    b = analytics.normalize_rufnummer("491512345678")
+    c = analytics.normalize_rufnummer("0049 151 2345678")
+    assert a == b == c
+    assert a.startswith("0")
+
+
+def test_normalize_rufnummer_leer():
+    assert analytics.normalize_rufnummer(None) is None
+    assert analytics.normalize_rufnummer("") is None
+
+
+# ---- Rechnungs-/Kostenauswertungen ---------------------------------------
+def _il(**kw):
+    base = {"rufnummer": "A", "kostenstelle": "K1", "item_name": "x",
+            "category": "grundpreis", "amount": 10.0}
+    base.update(kw)
+    return base
+
+
+def test_kosten_je_rufnummer_summiert_und_trennt_rabatt():
+    lines = [
+        _il(rufnummer="A", category="grundpreis", amount=60),
+        _il(rufnummer="A", category="rabatt", amount=-15),
+        _il(rufnummer="B", category="grundpreis", amount=40),
+    ]
+    r = analytics.kosten_je_rufnummer(lines)
+    assert round(r["A"]["netto"], 2) == 45
+    assert round(r["A"]["rabatt"], 2) == -15
+    assert round(r["B"]["netto"], 2) == 40
+
+
+def test_kosten_je_kostenstelle():
+    lines = [
+        _il(rufnummer="A", kostenstelle="K1", amount=45),
+        _il(rufnummer="B", kostenstelle="K1", amount=40),
+        _il(rufnummer="C", kostenstelle="K2", amount=30),
+    ]
+    k = {x["kostenstelle"]: x for x in analytics.kosten_je_kostenstelle(lines)}
+    assert round(k["K1"]["netto"]) == 85
+    assert k["K1"]["anzahl_rufnummern"] == 2
+
+
+def test_kosten_je_kategorie():
+    lines = [_il(category="grundpreis", amount=60), _il(category="rabatt", amount=-15),
+             _il(category="option", amount=17)]
+    d = dict(analytics.kosten_je_kategorie(lines))
+    assert round(d["grundpreis"]) == 60 and round(d["rabatt"]) == -15
+
+
+def test_kosten_trend_je_periode():
+    lines = [
+        {"_period_start": "2026-05-01", "amount": 100, "rufnummer": "A"},
+        {"_period_start": "2026-06-01", "amount": 120, "rufnummer": "A"},
+        {"_period_start": "2026-06-01", "amount": 30, "rufnummer": "B"},
+    ]
+    t = analytics.kosten_trend(lines)
+    assert len(t) == 2
+    p6 = [x for x in t if x["period"] == "2026-06-01"][0]
+    assert round(p6["netto"]) == 150
+
+
 def test_trend_zeitreihe():
     snapshots = [
         {"report_date": "2026-05-01T00:00:00",
