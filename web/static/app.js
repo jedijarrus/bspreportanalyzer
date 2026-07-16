@@ -1,7 +1,8 @@
 "use strict";
 
 const MAGENTA = "#e20074";
-const PALETTE = ["#e20074", "#7c3aed", "#0ea5e9", "#10b981", "#f59e0b", "#ef4444", "#64748b", "#14b8a6", "#ec4899", "#22c55e"];
+const DATA_COLOR = "#475569";  // neutraler Datenton (Slate) — Magenta nur als Akzent
+const PALETTE = ["#475569", "#0ea5e9", "#10b981", "#f59e0b", "#7c3aed", "#ef4444", "#14b8a6", "#64748b", "#22c55e", "#e20074"];
 const BUCKET_ORDER = ["abgelaufen", "0-3 Mon", "3-12 Mon", ">12 Mon", "ohne"];
 const BUCKET_COLOR = { "abgelaufen": "#ef4444", "0-3 Mon": "#f59e0b", "3-12 Mon": "#0ea5e9", ">12 Mon": "#10b981", "ohne": "#94a3b8" };
 
@@ -48,20 +49,28 @@ const COL_LABEL = { __status: "Status", __bindefrist: "Bindefrist", __multisim: 
 const MS_ORDER = ["ohne", "1", "2", "3+"];
 
 const state = {
-  all: [], fields: {}, stand: null, notes: {},
+  all: [], fields: {}, stand: null, notes: {}, invoices: [],
   filters: {},          // key -> Set(values)
   smart: null,          // optionaler Smart-Filter {label, fn}
   search: "",
   sortCol: "bindefristende", sortDir: 1,
   drawerKey: null,
   brutto: false, bruttoFactor: 1.19, rechnungStand: null,
+  route: "vertraege",
 };
 
-// Betrag ggf. auf Brutto umrechnen + als € formatieren
+// Betrag ggf. auf Brutto umrechnen
+function moneyNum(v) { return v == null ? 0 : (state.brutto ? v * state.bruttoFactor : v); }
 function money(v) {
+  return v == null ? "–" : moneyNum(v).toLocaleString("de-DE", { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + " €";
+}
+function pct(v, dec = 0) { return (v > 0 ? "+" : "") + v.toFixed(dec) + " %"; }
+// Δ-Anzeige: Kostensteigerung = amber/rot (Achtung), Senkung = grün
+function deltaBadge(v, pctVal) {
   if (v == null) return "–";
-  const x = state.brutto ? v * state.bruttoFactor : v;
-  return x.toLocaleString("de-DE", { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + " €";
+  const cls = v > 0 ? "delta-up" : v < 0 ? "delta-down" : "";
+  const arrow = v > 0 ? "▲" : v < 0 ? "▼" : "";
+  return `<span class="delta ${cls}">${arrow} ${money(Math.abs(v))}${pctVal != null ? " (" + pct(pctVal) + ")" : ""}</span>`;
 }
 function noteKey(c) { return (c.rahmenvertrag || "") + "|" + (c.rufnummer || ""); }
 const charts = {};
@@ -397,17 +406,39 @@ async function loadData() {
     api("/api/invoices"),
   ]);
   state.all = cur.contracts; state.fields = fields; state.stand = cur.stand; state.notes = notes;
+  state.invoices = invoices; state.rahmenvertraege = cur.rahmenvertraege;
   state.bruttoFactor = cur.brutto_factor || 1.19; state.rechnungStand = cur.rechnung_stand;
-  const teile = [cur.stand ? "Bestand " + fmtDate(cur.stand) : "", cur.rechnung_stand ? "Rechnung " + fmtDate(cur.rechnung_stand) : ""].filter(Boolean);
-  document.getElementById("stand").textContent = teile.join(" · ");
   renderReportList(reports);
   renderInvoiceList(invoices);
-  fillVerlaufRv(cur.rahmenvertraege);
+  navigate();
+}
+
+function renderVertraege() {
   const empty = !state.all.length;
   document.getElementById("emptyState").hidden = !empty;
   document.getElementById("grid").hidden = empty;
   if (!empty) render(); else clearRendered();
 }
+
+// ---- Router ---------------------------------------------------------------
+function currentRoute() {
+  const [name, param] = location.hash.replace(/^#\/?/, "").split("/");
+  return { name: ["vertraege", "rechnungen", "controlling"].includes(name) ? name : "vertraege", param };
+}
+function navigate() {
+  if (!Array.isArray(state.all)) return;
+  const r = currentRoute();
+  state.route = r.name;
+  document.querySelectorAll(".navtab").forEach((t) => t.classList.toggle("active", t.dataset.route === r.name));
+  ["vertraege", "rechnungen", "controlling"].forEach((v) =>
+    document.getElementById("view-" + v).hidden = v !== r.name);
+  // Suche/Netto-Brutto nur in Verträgen relevant -> Suche ausblenden ausserhalb
+  document.querySelector(".topbar-mid").style.visibility = r.name === "vertraege" ? "visible" : "hidden";
+  if (r.name === "vertraege") renderVertraege();
+  else if (r.name === "rechnungen") renderRechnungen(r.param);
+  else if (r.name === "controlling") renderControlling();
+}
+window.addEventListener("hashchange", navigate);
 function clearRendered() {
   ["chips", "kpis", "handlungsbedarf", "facets", "grid"].forEach((id) => (document.getElementById(id).innerHTML = ""));
   if (document.getElementById("charts")) { document.getElementById("charts").innerHTML = ""; document.getElementById("charts")._built = false; }
@@ -454,7 +485,7 @@ function showAuth(mode) {
   authMode = mode;
   document.getElementById("authOverlay").hidden = false;
   document.getElementById("appMain").hidden = true;
-  ["logoutBtn", "verlaufBtn", "settingsBtn", "kostenBtn", "netbrutto"].forEach((i) => (document.getElementById(i).hidden = true));
+  ["logoutBtn", "settingsBtn", "netbrutto", "mainnav"].forEach((i) => (document.getElementById(i).hidden = true));
   const setup = mode === "setup";
   document.getElementById("authTitle").textContent = setup ? "Passwort festlegen" : "Anmelden";
   document.getElementById("authHint").textContent = setup
@@ -467,7 +498,7 @@ function showAuth(mode) {
 function showApp() {
   document.getElementById("authOverlay").hidden = true;
   document.getElementById("appMain").hidden = false;
-  ["logoutBtn", "verlaufBtn", "settingsBtn", "kostenBtn", "netbrutto"].forEach((i) => (document.getElementById(i).hidden = false));
+  ["logoutBtn", "settingsBtn", "netbrutto", "mainnav"].forEach((i) => (document.getElementById(i).hidden = false));
   loadData();
 }
 async function submitAuth() {
@@ -495,24 +526,141 @@ async function init() {
   } catch (e) { showAuth("login"); }
 }
 
-// ---- verlauf (per RV) -----------------------------------------------------
-function fillVerlaufRv(rvs) {
-  document.getElementById("verlaufRv").innerHTML = (rvs || []).map((r) => `<option>${esc(r)}</option>`).join("");
+// ===== Bereich 2: Rechnungen ==============================================
+async function renderRechnungen(param) {
+  const pane = document.getElementById("view-rechnungen");
+  if (param) return renderRechnung(pane, +param);
+  const invs = state.invoices;
+  if (!invs.length) {
+    pane.innerHTML = '<div class="page"><h1 class="page-title">Rechnungen</h1><div class="empty">Noch keine Rechnung geladen — lade oben eine .xml.</div></div>';
+    return;
+  }
+  const rows = invs.map((r, i) => ({ r, delta: i > 0 ? r.total_net - invs[i - 1].total_net : null })).reverse();
+  pane.innerHTML = `
+    <div class="page">
+      <h1 class="page-title">Rechnungen <span class="muted">· ${invs.length}</span></h1>
+      <div class="table-wrap"><table class="grid-table">
+        <thead><tr>
+          <th>Zeitraum</th><th>Nr.</th><th>Ausgestellt</th>
+          <th class="money">Netto</th><th class="money">USt</th><th class="money">Brutto</th>
+          <th class="num">Pos.</th><th class="money">Δ Vormonat</th></tr></thead>
+        <tbody>${rows.map(({ r, delta }) => `
+          <tr data-invid="${r.id}">
+            <td><strong>${fmtDate(r.period_start)}</strong></td>
+            <td>${esc(r.invoice_number || "")}</td>
+            <td>${fmtDate(r.issue_date)}</td>
+            <td class="money">${money(r.total_net)}</td>
+            <td class="money">${money(r.total_tax)}</td>
+            <td class="money">${money(r.total_gross)}</td>
+            <td class="num">${r.line_count}</td>
+            <td class="money">${delta == null ? "–" : deltaBadge(delta)}</td>
+          </tr>`).join("")}</tbody>
+      </table></div>
+    </div>`;
 }
-async function showVerlauf() {
-  document.getElementById("verlaufOverlay").hidden = false;
-  // einfacher Verlauf über alle Trend-Punkte (serverseitig)
-  const data = await api("/api/trend");
-  const labels = data.map((d) => fmtDate(d.report_date));
-  if (charts.verlauf) charts.verlauf.destroy();
-  charts.verlauf = new Chart(document.getElementById("chartVerlauf"), {
-    type: "line",
-    data: { labels, datasets: [
-      { label: "Verträge", data: data.map((d) => d.total), borderColor: MAGENTA, tension: .2 },
-      { label: "gesperrt", data: data.map((d) => d.gesperrt), borderColor: PALETTE[2], tension: .2 },
-      { label: "Bindefrist ≤ 90 T", data: data.map((d) => d.ablaufend_90), borderColor: PALETTE[4], tension: .2 },
-    ] },
-    options: { responsive: true, maintainAspectRatio: false, animation: false, scales: { y: { beginAtZero: true, ticks: { precision: 0 } } } },
+
+async function renderRechnung(pane, id) {
+  pane.innerHTML = '<div class="page"><a class="back" href="#/rechnungen">← Alle Rechnungen</a><div class="hint">lade …</div></div>';
+  const d = await api(`/api/invoices/${id}`);
+  const inv = d.invoice, rec = d.reconcile, diff = d.diff;
+  const dNet = diff ? diff.gesamt.delta : null;
+  const dPct = diff && diff.gesamt.alt ? (dNet / diff.gesamt.alt) * 100 : null;
+  const dl = (l, v, cls = "") => `<div class="dl ${cls}"><span>${esc(l)}</span><b>${money(v)}</b></div>`;
+  const katSum = d.kategorie.reduce((a, [, v]) => a + Math.abs(v), 0) || 1;
+  const kstRows = (diff ? diff.je_kostenstelle : d.kostenstelle.map((x) => ({ kostenstelle: x.kostenstelle, neu: x.netto, delta: null }))).slice(0, 10);
+  const anom = diff ? [
+    diff.neu.length ? `<div class="dl"><span>neu berechnet</span><b>${diff.neu.length}</b></div>` : "",
+    diff.weggefallen.length ? `<div class="dl"><span>weggefallen</span><b>${diff.weggefallen.length}</b></div>` : "",
+    ...diff.je_rufnummer.slice(0, 5).filter((x) => x.delta).map((x) => `<div class="dl"><span>${esc(x.rufnummer)}</span><b>${deltaBadge(x.delta)}</b></div>`),
+  ].join("") : '<span class="hint">keine Vorrechnung</span>';
+  const au = d.datenauslastung;
+  pane.innerHTML = `
+    <div class="page">
+      <a class="back" href="#/rechnungen">← Alle Rechnungen</a>
+      <div class="inv-head">
+        <div class="inv-kopf">
+          <h1 class="page-title">Rechnung ${esc(inv.invoice_number || "")}</h1>
+          <div class="dl"><span>Zeitraum</span><b class="plain">${fmtDate(inv.period_start)} – ${fmtDate(inv.period_end)}</b></div>
+          <div class="dl"><span>Ausgestellt</span><b class="plain">${fmtDate(inv.issue_date)}</b></div>
+          ${dl("Netto", inv.total_net)}
+          ${dl("USt", inv.total_tax)}
+          ${dl("Brutto", inv.total_gross, "total")}
+          <div class="dl rec"><span>Zuordnung</span><b>${money(rec.zugeordnet)} · Rest ${money(rec.nicht_zugeordnet)}</b></div>
+        </div>
+        <div class="inv-delta ${dNet > 0 ? "delta-up" : dNet < 0 ? "delta-down" : ""}">
+          <div class="muted">Δ zum Vormonat${d.prev_period ? " (" + fmtDate(d.prev_period) + ")" : ""}</div>
+          <div class="delta-big">${dNet == null ? "–" : (dNet > 0 ? "+" : "") + money(dNet)}</div>
+          ${dPct != null ? `<div class="muted">${pct(dPct, 1)}</div>` : ""}
+        </div>
+      </div>
+      <div class="panel-grid">
+        <div class="card2"><h3>Nach Kategorie</h3>${d.kategorie.map(([k, v]) => `<div class="dl"><span><span class="cat cat-${esc(k)}">${esc(k)}</span></span><b>${money(v)} <span class="muted">${Math.round(Math.abs(v) / katSum * 100)}%</span></b></div>`).join("")}</div>
+        <div class="card2"><h3>Nach Kostenstelle ${diff ? "(Δ Vormonat)" : ""}</h3>${kstRows.map((x) => `<div class="dl"><span>${esc(x.kostenstelle)}</span><b>${money(x.neu)}${x.delta ? " " + deltaBadge(x.delta) : ""}</b></div>`).join("")}</div>
+        <div class="card2"><h3>Top-Kostentreiber</h3>${d.top_treiber.slice(0, 8).map((t) => `<div class="dl"><span>${esc(t.rufnummer)}</span><b>${money(t.netto)}</b></div>`).join("")}</div>
+        <div class="card2"><h3>Auffälligkeiten (Δ)</h3>${anom}</div>
+        <div class="card2"><h3>Datenauslastung</h3>
+          <div class="dl"><span>Positionen mit Volumen</span><b>${au.anzahl}</b></div>
+          <div class="dl"><span>über 100% (drüber)</span><b class="warn">${au.ueber_100}</b></div>
+          <div class="dl"><span>&lt; 25% genutzt</span><b>${au.unter_25}</b></div>
+          <div class="dl"><span>&lt; 10% (fast ungenutzt)</span><b>${au.unter_10}</b></div>
+        </div>
+      </div>
+    </div>`;
+}
+
+// ===== Bereich 3: Controlling =============================================
+async function renderControlling() {
+  const pane = document.getElementById("view-controlling");
+  const latest = state.invoices.length ? state.invoices[state.invoices.length - 1] : null;
+  if (!latest) {
+    pane.innerHTML = '<div class="page"><h1 class="page-title">Controlling</h1><div class="empty">Noch keine Rechnung geladen.</div></div>';
+    return;
+  }
+  const [d, trend, ks] = await Promise.all([
+    api(`/api/invoices/${latest.id}`), api("/api/costs/trend"),
+    api(`/api/costs/kostenstellen?invoice_id=${latest.id}`)]);
+  const inv = d.invoice, rec = d.reconcile, diff = d.diff;
+  const dNet = diff ? diff.gesamt.delta : null;
+  const dPct = diff && diff.gesamt.alt ? (dNet / diff.gesamt.alt) * 100 : null;
+  const rab = d.kategorie.find(([k]) => k === "rabatt");
+  const rabSum = rab ? Math.abs(rab[1]) : 0;
+  const rabQuote = (inv.total_net + rabSum) ? rabSum / (inv.total_net + rabSum) * 100 : 0;
+  const nSim = rec.anzahl_rufnummern || 1;
+  const kpis = [
+    ["Netto Monat", money(inv.total_net), dNet != null ? deltaBadge(dNet, dPct) : ""],
+    ["Ø je Vertrag", money(inv.total_net / nSim), ""],
+    ["Rabatt", `${money(rabSum)} · ${rabQuote.toFixed(0)}%`, ""],
+    ["Zuordnung", `${rec.anzahl_rufnummern} / ${state.all.length}`, ""],
+    ["Nicht zugeordnet", money(rec.nicht_zugeordnet), ""],
+  ];
+  const topKst = ks.slice(0, 12);
+  pane.innerHTML = `
+    <div class="page">
+      <h1 class="page-title">Controlling <span class="muted">· Rechnung ${fmtDate(inv.period_start)}</span></h1>
+      <div class="kpis">${kpis.map(([l, v, dd]) => `<div class="card"><div class="num">${v}</div><div class="lbl">${l}${dd ? " · " + dd : ""}</div></div>`).join("")}</div>
+      <div class="section-title">Kostentrend <span class="muted">(Netto je Rechnung)</span></div>
+      <div class="chart-box" style="height:280px"><canvas id="ctrlTrend"></canvas></div>
+      <div class="section-title">Top-Kostenstellen <span class="muted">(${fmtDate(inv.period_start)})</span></div>
+      <div class="chart-box" style="height:340px"><canvas id="ctrlKst"></canvas></div>
+      <div class="table-wrap"><table class="grid-table"><thead><tr><th>Kostenstelle</th><th class="num">Verträge</th><th class="money">Netto</th></tr></thead>
+        <tbody>${ks.map((x) => `<tr><td>${esc(x.kostenstelle)}</td><td class="num">${x.anzahl_rufnummern}</td><td class="money">${money(x.netto)}</td></tr>`).join("")}</tbody></table></div>
+    </div>`;
+  drawCtrlChart("ctrlTrend", "line", trend.map((t) => fmtDate(t.period)), trend.map((t) => moneyNum(t.netto)));
+  drawCtrlChart("ctrlKst", "bar", topKst.map((x) => x.kostenstelle), topKst.map((x) => moneyNum(x.netto)));
+}
+
+function drawCtrlChart(id, type, labels, data) {
+  if (charts[id]) charts[id].destroy();
+  const ctx = document.getElementById(id);
+  if (!ctx) return;
+  charts[id] = new Chart(ctx, {
+    type,
+    data: { labels, datasets: [{ data, backgroundColor: DATA_COLOR, borderColor: DATA_COLOR, borderRadius: 5, tension: .2, fill: false }] },
+    options: {
+      responsive: true, maintainAspectRatio: false, animation: false,
+      plugins: { legend: { display: false }, tooltip: { callbacks: { label: (c) => money(c.parsed.y ?? c.parsed) } } },
+      scales: { x: { ticks: { font: { size: 10 }, maxRotation: 55 } }, y: { beginAtZero: true, ticks: { callback: (v) => v.toLocaleString("de-DE") } } },
+    },
   });
 }
 
@@ -544,7 +692,7 @@ document.getElementById("netbrutto").addEventListener("click", (e) => {
   const opt = e.target.closest("[data-nb]"); if (!opt) return;
   state.brutto = opt.dataset.nb === "brutto";
   document.querySelectorAll("#netbrutto .nb-opt").forEach((b) => b.classList.toggle("active", b === opt));
-  render();
+  navigate();
   if (!document.getElementById("drawer").hidden && state.drawerRuf) loadDrawerKosten(state.drawerRuf);
 });
 
@@ -571,44 +719,11 @@ document.getElementById("invoiceList").addEventListener("click", async (e) => {
   toast("Rechnung gelöscht"); await loadData();
 });
 
-// ---- Kosten-Modal (Controlling) ------------------------------------------
-document.getElementById("kostenBtn").addEventListener("click", showKosten);
-document.getElementById("kostenClose").addEventListener("click", () => { document.getElementById("kostenOverlay").hidden = true; });
-document.getElementById("kostenOverlay").addEventListener("click", (e) => { if (e.target.id === "kostenOverlay") e.currentTarget.hidden = true; });
-document.querySelectorAll("#kostenOverlay .tab").forEach((tab) => {
-  tab.addEventListener("click", () => {
-    document.querySelectorAll("#kostenOverlay .tab").forEach((t) => t.classList.remove("active"));
-    document.querySelectorAll("#kostenOverlay .panel").forEach((p) => p.classList.remove("active"));
-    tab.classList.add("active");
-    document.getElementById("ktab-" + tab.dataset.ktab).classList.add("active");
-  });
+// Klick auf Rechnungszeile -> Einzelrechnung
+document.getElementById("view-rechnungen").addEventListener("click", (e) => {
+  const tr = e.target.closest("[data-invid]");
+  if (tr) location.hash = "#/rechnungen/" + tr.dataset.invid;
 });
-
-async function showKosten() {
-  document.getElementById("kostenOverlay").hidden = false;
-  const [ks, trend] = await Promise.all([api("/api/costs/kostenstellen"), api("/api/costs/trend")]);
-  // Kostenstellen: Top 15 als Balken + volle Tabelle
-  const top = ks.slice(0, 15);
-  drawKostenChart("chartKostenstellen", "bar", top.map((x) => x.kostenstelle),
-    top.map((x) => state.brutto ? x.netto * state.bruttoFactor : x.netto), "Kosten je Kostenstelle");
-  document.getElementById("tblKostenstellen").innerHTML =
-    "<tr><th>Kostenstelle</th><th>Verträge</th><th class='money'>Kosten</th></tr>" +
-    ks.map((x) => `<tr><td>${esc(x.kostenstelle)}</td><td>${x.anzahl_rufnummern}</td><td class="money">${money(x.netto)}</td></tr>`).join("");
-  // Trend
-  drawKostenChart("chartKostentrend", "line", trend.map((t) => fmtDate(t.period)),
-    trend.map((t) => state.brutto ? t.netto * state.bruttoFactor : t.netto), "Netto-Kosten je Rechnung");
-}
-
-function drawKostenChart(id, type, labels, data, title) {
-  if (charts[id]) charts[id].destroy();
-  charts[id] = new Chart(document.getElementById(id), {
-    type,
-    data: { labels, datasets: [{ label: title, data, backgroundColor: type === "bar" ? MAGENTA : "transparent", borderColor: MAGENTA, borderRadius: 6, tension: .2 }] },
-    options: { responsive: true, maintainAspectRatio: false, animation: false,
-      plugins: { legend: { display: false }, title: { display: true, text: title } },
-      scales: { x: { ticks: { font: { size: 10 }, maxRotation: 60 } }, y: { beginAtZero: true } } },
-  });
-}
 
 document.getElementById("chips").addEventListener("click", (e) => {
   if (e.target.id === "clearAll") return clearFilters();
@@ -652,8 +767,5 @@ document.getElementById("drawer").addEventListener("click", async (e) => {
 });
 document.getElementById("drawerOverlay").addEventListener("click", closeDrawer);
 document.getElementById("csvBtn").addEventListener("click", exportCsv);
-document.getElementById("verlaufBtn").addEventListener("click", showVerlauf);
-document.getElementById("verlaufClose").addEventListener("click", () => (document.getElementById("verlaufOverlay").hidden = true));
-document.getElementById("verlaufOverlay").addEventListener("click", (e) => { if (e.target.id === "verlaufOverlay") e.currentTarget.hidden = true; });
 
 init();
