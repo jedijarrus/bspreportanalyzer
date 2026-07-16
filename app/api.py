@@ -21,7 +21,7 @@ from pydantic import BaseModel
 from starlette.middleware.sessions import SessionMiddleware
 from starlette.requests import Request
 
-from app import analytics, auth, config, parser
+from app import analytics, auth, config, invoice_parser, parser
 from app.store import Store
 
 WEB_DIR = Path(__file__).resolve().parents[1] / "web"
@@ -59,6 +59,14 @@ def require_auth(request: Request):
 
 def _today() -> dt.date:
     return dt.date.today()
+
+
+def _latest_invoice(db: Store):
+    """Neueste Rechnung (nach Periode, dann id) oder None."""
+    invs = db.list_invoices()
+    if not invs:
+        return None
+    return sorted(invs, key=lambda i: (i.get("period_start") or "", i["id"]))[-1]
 
 
 def create_app(secret_key: str | None = None) -> FastAPI:
@@ -155,12 +163,83 @@ def create_app(secret_key: str | None = None) -> FastAPI:
 
     @app.get("/api/current", dependencies=[Depends(require_auth)])
     def current(db: Store = Depends(get_store)):
-        """Aktueller Gesamtbestand über alle Rahmenverträge (neuester
-        Report je RV). Frontend filtert/aggregiert clientseitig."""
+        """Aktueller Gesamtbestand über alle Rahmenverträge (neuester Report je RV),
+        angereichert mit Kosten aus der neuesten Rechnung (Join über Rufnummer)."""
         fleet = analytics.current_fleet(db.all_contracts())
         stand = max((c.get("_report_date") or "" for c in fleet), default=None)
         rvs = sorted({c.get("rahmenvertrag") for c in fleet if c.get("rahmenvertrag")})
-        return {"stand": stand or None, "rahmenvertraege": rvs, "contracts": fleet}
+
+        norm = analytics.normalize_rufnummer
+        latest = _latest_invoice(db)
+        kmap, brutto_factor, rechnung_stand = {}, 1.19, None
+        if latest:
+            lines = db.get_invoice_lines(latest["id"])
+            # Kosten je Rufnummer, umgeschlüsselt auf normalisierte Rufnummer (Join)
+            kmap = {norm(k): v for k, v in analytics.kosten_je_rufnummer(lines).items()}
+            net, gross = latest.get("total_net") or 0, latest.get("total_gross") or 0
+            if net:
+                brutto_factor = round(gross / net, 4)
+            rechnung_stand = latest.get("period_start")
+
+        for c in fleet:
+            k = kmap.get(norm(c.get("rufnummer")))
+            c["_kosten_netto"] = round(k["netto"], 2) if k else None
+            c["_rabatt"] = round(k["rabatt"], 2) if k else None
+            c["_grundpreis"] = round(k["grundpreis"] + k["option"], 2) if k else None
+
+        return {"stand": stand or None, "rahmenvertraege": rvs, "contracts": fleet,
+                "netto_factor": 1.0, "brutto_factor": brutto_factor,
+                "rechnung_stand": rechnung_stand}
+
+    # ---- Rechnungen / Kosten -------------------------------------------
+    @app.post("/api/invoices", status_code=201, dependencies=[Depends(require_auth)])
+    async def upload_invoice(file: UploadFile, db: Store = Depends(get_store)):
+        safe_name = Path(file.filename or "").name
+        if not safe_name.lower().endswith(".xml"):
+            raise HTTPException(400, "Nur .xml-Rechnungen (XRechnung/UBL) werden akzeptiert.")
+        content = await file.read(config.MAX_UPLOAD_BYTES + 1)
+        if len(content) > config.MAX_UPLOAD_BYTES:
+            raise HTTPException(413, "Datei zu groß.")
+        config.INVOICE_DIR.mkdir(parents=True, exist_ok=True)
+        dest = config.INVOICE_DIR / safe_name
+        dest.write_bytes(content)
+        try:
+            data = invoice_parser.parse_invoice(dest)
+        except Exception:
+            dest.unlink(missing_ok=True)
+            raise HTTPException(400, "Rechnung konnte nicht gelesen werden (ungültiges XML?).")
+        invoice_id = db.add_invoice(data)
+        return {"invoice_id": invoice_id, "line_count": len(data.lines),
+                "filename": data.filename}
+
+    @app.get("/api/invoices", dependencies=[Depends(require_auth)])
+    def list_invoices(db: Store = Depends(get_store)):
+        return db.list_invoices()
+
+    @app.delete("/api/invoices/{invoice_id}", status_code=204,
+                dependencies=[Depends(require_auth)])
+    def delete_invoice(invoice_id: int, db: Store = Depends(get_store)):
+        db.delete_invoice(invoice_id)
+        return Response(status_code=204)
+
+    @app.get("/api/costs/kostenstellen", dependencies=[Depends(require_auth)])
+    def costs_kostenstellen(db: Store = Depends(get_store)):
+        latest = _latest_invoice(db)
+        lines = db.get_invoice_lines(latest["id"]) if latest else []
+        return analytics.kosten_je_kostenstelle(lines)
+
+    @app.get("/api/costs/trend", dependencies=[Depends(require_auth)])
+    def costs_trend(db: Store = Depends(get_store)):
+        return analytics.kosten_trend(db.all_invoice_lines())
+
+    @app.get("/api/costs/lines/{rufnummer}", dependencies=[Depends(require_auth)])
+    def costs_lines(rufnummer: str, db: Store = Depends(get_store)):
+        latest = _latest_invoice(db)
+        if not latest:
+            return []
+        target = analytics.normalize_rufnummer(rufnummer)
+        return [l for l in db.get_invoice_lines(latest["id"])
+                if analytics.normalize_rufnummer(l.get("rufnummer")) == target]
 
     @app.delete("/api/reports/{report_id}", status_code=204,
                 dependencies=[Depends(require_auth)])
