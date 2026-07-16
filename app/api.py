@@ -171,11 +171,12 @@ def create_app(secret_key: str | None = None) -> FastAPI:
 
         norm = analytics.normalize_rufnummer
         latest = _latest_invoice(db)
-        kmap, brutto_factor, rechnung_stand = {}, 1.19, None
+        kmap, brutto_factor, rechnung_stand, auslastung = {}, 1.19, None, None
         if latest:
             lines = db.get_invoice_lines(latest["id"])
             # Kosten je Rufnummer, umgeschlüsselt auf normalisierte Rufnummer (Join)
             kmap = {norm(k): v for k, v in analytics.kosten_je_rufnummer(lines).items()}
+            auslastung = analytics.datenauslastung(lines)
             net, gross = latest.get("total_net") or 0, latest.get("total_gross") or 0
             if net:
                 brutto_factor = round(gross / net, 4)
@@ -189,7 +190,7 @@ def create_app(secret_key: str | None = None) -> FastAPI:
 
         return {"stand": stand or None, "rahmenvertraege": rvs, "contracts": fleet,
                 "netto_factor": 1.0, "brutto_factor": brutto_factor,
-                "rechnung_stand": rechnung_stand}
+                "rechnung_stand": rechnung_stand, "datenauslastung": auslastung}
 
     # ---- Rechnungen / Kosten -------------------------------------------
     @app.post("/api/invoices", status_code=201, dependencies=[Depends(require_auth)])
@@ -229,8 +230,18 @@ def create_app(secret_key: str | None = None) -> FastAPI:
         if not inv:
             raise HTTPException(404, "Rechnung nicht gefunden.")
         lines = db.get_invoice_lines(invoice_id)
-        top = sorted(analytics.kosten_je_rufnummer(lines).items(),
-                     key=lambda kv: -kv[1]["netto"])[:10]
+        # Join mit aktueller Flotte (Rufnummer) für Nutzer/Rahmenvertrag
+        norm = analytics.normalize_rufnummer
+        cmap = {norm(c.get("rufnummer")): c for c in analytics.current_fleet(db.all_contracts())}
+        kmap = analytics.kosten_je_rufnummer(lines)
+        rv_agg: dict = {}
+        for ruf, v in kmap.items():
+            c = cmap.get(norm(ruf))
+            key = (c.get("rahmenvertrag") if c else None) or "(ohne Vertrag)"
+            d = rv_agg.setdefault(key, {"rahmenvertrag": key, "netto": 0.0, "anzahl": 0})
+            d["netto"] = round(d["netto"] + v["netto"], 2)
+            d["anzahl"] += 1
+        top = sorted(kmap.items(), key=lambda kv: -kv[1]["netto"])[:12]
         # Vorrechnung (nach Periode) für Δ
         ordered = sorted(invs.values(), key=lambda i: (i.get("period_start") or "", i["id"]))
         pos = [i["id"] for i in ordered].index(invoice_id)
@@ -242,7 +253,10 @@ def create_app(secret_key: str | None = None) -> FastAPI:
             "kostenstelle": analytics.kosten_je_kostenstelle(lines),
             "reconcile": analytics.reconcile(lines, inv.get("total_net") or 0.0),
             "datenauslastung": analytics.datenauslastung(lines),
-            "top_treiber": [{"rufnummer": r, **v} for r, v in top],
+            "je_rahmenvertrag": sorted(rv_agg.values(), key=lambda x: -x["netto"]),
+            "top_treiber": [{"rufnummer": r, "netto": v["netto"], "rabatt": v["rabatt"],
+                             "nutzer": (cmap.get(norm(r)) or {}).get("kostenstellennutzer")}
+                            for r, v in top],
             "diff": diff,
             "prev_period": prev.get("period_start") if prev else None,
         }

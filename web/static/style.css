@@ -50,6 +50,9 @@ body { margin: 0; font-family: "Segoe UI", system-ui, -apple-system, sans-serif;
 .inv-delta.delta-up .delta-big { color: #b45309; }
 .inv-delta.delta-down .delta-big { color: #166534; }
 
+.section-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; align-items: start; }
+@media (max-width: 900px) { .section-grid { grid-template-columns: 1fr; } }
+
 /* Panel-Grid der Einzelrechnung */
 .panel-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 16px; }
 .card2 { background: #fff; border: 1px solid var(--line); border-radius: 12px; padding: 14px 18px; }
@@ -110,6 +113,17 @@ select { padding: 8px 10px; border: 1px solid var(--line); border-radius: 8px; f
 .kpis .card { background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 16px 22px; min-width: 130px; }
 .kpis .num { font-size: 28px; font-weight: 700; color: var(--magenta); }
 .kpis .lbl { font-size: 12px; color: var(--muted); margin-top: 2px; }
+
+/* Datenauslastungs-Leiste (Flotte) */
+.usage-bar { background: #fff; border: 1px solid var(--line); border-radius: 12px; padding: 14px 18px; margin-top: 14px; }
+.usage-head { display: flex; justify-content: space-between; align-items: baseline; font-size: 14px; margin-bottom: 8px; gap: 12px; }
+.usage-head b { font-variant-numeric: tabular-nums; white-space: nowrap; }
+.meter { height: 14px; background: #eef2f7; border-radius: 999px; overflow: hidden; }
+.meter-fill { height: 100%; border-radius: 999px; transition: width .3s; }
+.meter-fill.low { background: #f59e0b; }
+.meter-fill.mid { background: #10b981; }
+.meter-fill.high { background: #ef4444; }
+.usage-foot { font-size: 12px; margin-top: 6px; }
 
 /* Handlungsbedarf */
 .action-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(190px, 1fr)); gap: 12px; }

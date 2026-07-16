@@ -162,6 +162,7 @@ function render() {
   renderRvList();
   renderChips();
   renderKpis(rows);
+  renderUsageBar();
   renderHandlungsbedarf();
   renderCharts(rows);
   renderFacets();
@@ -187,12 +188,30 @@ function renderKpis(rows) {
   const rvs = new Set(rows.map((c) => c.rahmenvertrag).filter(Boolean)).size;
   const kst = new Set(rows.map((c) => c.kostenstelle).filter(Boolean)).size;
   const mitMs = rows.filter((c) => multisimCount(c) > 0).length;
+  const kostenSum = rows.reduce((a, c) => a + (c._kosten_netto || 0), 0);
   const kpis = [
-    ["Verträge", rows.length], ["Rahmenverträge", rvs], ["Gesperrt", gesperrt],
-    ["Bindefrist ≤ 90 T", ablauf], ["mit MultiSIM", mitMs], ["Kostenstellen", kst],
+    ["Verträge", rows.length], ["Kosten / Monat", money(kostenSum)], ["Rahmenverträge", rvs],
+    ["Gesperrt", gesperrt], ["Bindefrist ≤ 90 T", ablauf], ["mit MultiSIM", mitMs],
   ];
   document.getElementById("kpis").innerHTML = kpis.map(([l, n]) =>
     `<div class="card"><div class="num">${n}</div><div class="lbl">${l}</div></div>`).join("");
+}
+
+function renderUsageBar() {
+  const box = document.getElementById("usageBar");
+  const a = state.auslastung;
+  if (!a || !a.anzahl) { box.innerHTML = ""; return; }
+  const p = a.auslastung_pct;
+  const cls = p < 40 ? "low" : p < 80 ? "mid" : "high";
+  box.innerHTML = `
+    <div class="usage-bar">
+      <div class="usage-head">
+        <span>Datenauslastung Flotte <span class="muted">(Rechnung ${fmtDate(state.rechnungStand)})</span></span>
+        <b>${a.verbraucht_gb.toLocaleString("de-DE")} / ${a.gebucht_gb.toLocaleString("de-DE")} GB · ${p} %</b>
+      </div>
+      <div class="meter" title="${p}% des gebuchten Volumens genutzt"><div class="meter-fill ${cls}" style="width:${Math.min(100, p)}%"></div></div>
+      <div class="usage-foot muted">${a.unter_25} Verträge &lt; 25 % genutzt (Downgrade-Potenzial) · ${a.ueber_100} Overage (&gt; 100 %)</div>
+    </div>`;
 }
 
 function renderHandlungsbedarf() {
@@ -408,6 +427,7 @@ async function loadData() {
   state.all = cur.contracts; state.fields = fields; state.stand = cur.stand; state.notes = notes;
   state.invoices = invoices; state.rahmenvertraege = cur.rahmenvertraege;
   state.bruttoFactor = cur.brutto_factor || 1.19; state.rechnungStand = cur.rechnung_stand;
+  state.auslastung = cur.datenauslastung;
   renderReportList(reports);
   renderInvoiceList(invoices);
   navigate();
@@ -567,7 +587,6 @@ async function renderRechnung(pane, id) {
   const dPct = diff && diff.gesamt.alt ? (dNet / diff.gesamt.alt) * 100 : null;
   const dl = (l, v, cls = "") => `<div class="dl ${cls}"><span>${esc(l)}</span><b>${money(v)}</b></div>`;
   const katSum = d.kategorie.reduce((a, [, v]) => a + Math.abs(v), 0) || 1;
-  const kstRows = (diff ? diff.je_kostenstelle : d.kostenstelle.map((x) => ({ kostenstelle: x.kostenstelle, neu: x.netto, delta: null }))).slice(0, 10);
   const anom = diff ? [
     diff.neu.length ? `<div class="dl"><span>neu berechnet</span><b>${diff.neu.length}</b></div>` : "",
     diff.weggefallen.length ? `<div class="dl"><span>weggefallen</span><b>${diff.weggefallen.length}</b></div>` : "",
@@ -595,8 +614,8 @@ async function renderRechnung(pane, id) {
       </div>
       <div class="panel-grid">
         <div class="card2"><h3>Nach Kategorie</h3>${d.kategorie.map(([k, v]) => `<div class="dl"><span><span class="cat cat-${esc(k)}">${esc(k)}</span></span><b>${money(v)} <span class="muted">${Math.round(Math.abs(v) / katSum * 100)}%</span></b></div>`).join("")}</div>
-        <div class="card2"><h3>Nach Kostenstelle ${diff ? "(Δ Vormonat)" : ""}</h3>${kstRows.map((x) => `<div class="dl"><span>${esc(x.kostenstelle)}</span><b>${money(x.neu)}${x.delta ? " " + deltaBadge(x.delta) : ""}</b></div>`).join("")}</div>
-        <div class="card2"><h3>Top-Kostentreiber</h3>${d.top_treiber.slice(0, 8).map((t) => `<div class="dl"><span>${esc(t.rufnummer)}</span><b>${money(t.netto)}</b></div>`).join("")}</div>
+        <div class="card2"><h3>Nach Rahmenvertrag</h3>${(d.je_rahmenvertrag || []).map((x) => `<div class="dl"><span>${esc(x.rahmenvertrag)} <span class="muted">· ${x.anzahl}</span></span><b>${money(x.netto)}</b></div>`).join("")}</div>
+        <div class="card2"><h3>Top-Kostentreiber <span class="muted">(Mitarbeiter)</span></h3>${d.top_treiber.slice(0, 8).map((t) => `<div class="dl"><span>${esc(t.nutzer || t.rufnummer)}</span><b>${money(t.netto)}</b></div>`).join("")}</div>
         <div class="card2"><h3>Auffälligkeiten (Δ)</h3>${anom}</div>
         <div class="card2"><h3>Datenauslastung</h3>
           <div class="dl"><span>Gesamt-Auslastung</span><b>${au.auslastung_pct}%</b></div>
@@ -616,9 +635,8 @@ async function renderControlling() {
     pane.innerHTML = '<div class="page"><h1 class="page-title">Controlling</h1><div class="empty">Noch keine Rechnung geladen.</div></div>';
     return;
   }
-  const [d, trend, ks] = await Promise.all([
-    api(`/api/invoices/${latest.id}`), api("/api/costs/trend"),
-    api(`/api/costs/kostenstellen?invoice_id=${latest.id}`)]);
+  const [d, trend] = await Promise.all([
+    api(`/api/invoices/${latest.id}`), api("/api/costs/trend")]);
   const inv = d.invoice, rec = d.reconcile, diff = d.diff;
   const dNet = diff ? diff.gesamt.delta : null;
   const dPct = diff && diff.gesamt.alt ? (dNet / diff.gesamt.alt) * 100 : null;
@@ -633,7 +651,7 @@ async function renderControlling() {
     ["Zuordnung", `${rec.anzahl_rufnummern} / ${state.all.length}`, ""],
     ["Nicht zugeordnet", money(rec.nicht_zugeordnet), ""],
   ];
-  const topKst = ks.slice(0, 12);
+  const rv = d.je_rahmenvertrag || [];
   const au = d.datenauslastung;
   pane.innerHTML = `
     <div class="page">
@@ -649,13 +667,20 @@ async function renderControlling() {
       </div>
       <div class="section-title">Kostentrend <span class="muted">(Netto je Rechnung)</span></div>
       <div class="chart-box" style="height:280px"><canvas id="ctrlTrend"></canvas></div>
-      <div class="section-title">Top-Kostenstellen <span class="muted">(${fmtDate(inv.period_start)})</span></div>
-      <div class="chart-box" style="height:340px"><canvas id="ctrlKst"></canvas></div>
-      <div class="table-wrap"><table class="grid-table"><thead><tr><th>Kostenstelle</th><th class="num">Verträge</th><th class="money">Netto</th></tr></thead>
-        <tbody>${ks.map((x) => `<tr><td>${esc(x.kostenstelle)}</td><td class="num">${x.anzahl_rufnummern}</td><td class="money">${money(x.netto)}</td></tr>`).join("")}</tbody></table></div>
+      <div class="section-grid">
+        <div>
+          <div class="section-title">Kosten je Rahmenvertrag</div>
+          <div class="chart-box" style="height:260px"><canvas id="ctrlRv"></canvas></div>
+        </div>
+        <div>
+          <div class="section-title">Top-Kostentreiber <span class="muted">(je Vertrag / Mitarbeiter)</span></div>
+          <div class="table-wrap"><table class="grid-table"><thead><tr><th>Mitarbeiter</th><th>Rufnummer</th><th class="money">Netto</th></tr></thead>
+            <tbody>${d.top_treiber.map((t) => `<tr><td>${esc(t.nutzer || "–")}</td><td>${esc(t.rufnummer)}</td><td class="money">${money(t.netto)}</td></tr>`).join("")}</tbody></table></div>
+        </div>
+      </div>
     </div>`;
   drawCtrlChart("ctrlTrend", "line", trend.map((t) => fmtDate(t.period)), trend.map((t) => moneyNum(t.netto)));
-  drawCtrlChart("ctrlKst", "bar", topKst.map((x) => x.kostenstelle), topKst.map((x) => moneyNum(x.netto)));
+  drawCtrlChart("ctrlRv", "bar", rv.map((x) => x.rahmenvertrag), rv.map((x) => moneyNum(x.netto)));
 }
 
 function drawCtrlChart(id, type, labels, data) {
