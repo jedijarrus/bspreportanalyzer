@@ -18,7 +18,7 @@ import sys
 from pathlib import Path
 
 # --- Verbotene Dateiendungen (Reports / DB / Exporte) ----------------------
-FORBIDDEN_SUFFIXES = {".xlsx", ".xls", ".db", ".sqlite", ".sqlite3", ".csv"}
+FORBIDDEN_SUFFIXES = {".xlsx", ".xls", ".db", ".sqlite", ".sqlite3", ".csv", ".xml"}
 
 # --- PII-Muster ------------------------------------------------------------
 # Jede Regel: (Name, kompiliertes Pattern). Treffer => Leak-Verdacht.
