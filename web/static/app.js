@@ -17,7 +17,17 @@ const FACETS = [
   { key: "daten_optionen", label: "Daten-Optionen", kind: "multi" },
   { key: "voice_optionen", label: "Voice-Optionen", kind: "multi" },
   { key: "roaming_optionen", label: "Roaming-Optionen", kind: "multi" },
+  { key: "__kosten", label: "Monatskosten", kind: "derived", fn: (c) => [kostenBucket(c._kosten_netto)] },
+  { key: "__rabatt", label: "Rabatt", kind: "derived", fn: (c) => [c._rabatt ? "mit Rabatt" : "ohne"] },
 ];
+const KOSTEN_ORDER = ["< 25 €", "25–75 €", "75–150 €", "> 150 €", "ohne"];
+function kostenBucket(v) {
+  if (v == null) return "ohne";
+  if (v < 25) return "< 25 €";
+  if (v < 75) return "25–75 €";
+  if (v < 150) return "75–150 €";
+  return "> 150 €";
+}
 const FACET_BY_KEY = Object.fromEntries(FACETS.map((f) => [f.key, f]));
 
 const CHARTS = [
@@ -31,8 +41,10 @@ const CHARTS = [
   { id: "roaming_optionen", title: "Roaming-Optionen", type: "bar" },
 ];
 
-const GRID_COLS = ["rufnummer", "rahmenvertrag", "kostenstellennutzer", "kostenstelle", "tarif", "bindefristende", "__status", "vvl_berechtigung"];
-const COL_LABEL = { __status: "Status", __bindefrist: "Bindefrist", __multisim: "MultiSIM" };
+const GRID_COLS = ["rufnummer", "rahmenvertrag", "kostenstellennutzer", "kostenstelle", "tarif", "_kosten_netto", "_rabatt", "bindefristende", "__status", "vvl_berechtigung"];
+const MONEY_COLS = new Set(["_kosten_netto", "_rabatt"]);
+const COL_LABEL = { __status: "Status", __bindefrist: "Bindefrist", __multisim: "MultiSIM",
+  _kosten_netto: "Monatskosten", _rabatt: "Rabatt", __kosten: "Monatskosten", __rabatt: "Rabatt" };
 const MS_ORDER = ["ohne", "1", "2", "3+"];
 
 const state = {
@@ -42,7 +54,15 @@ const state = {
   search: "",
   sortCol: "bindefristende", sortDir: 1,
   drawerKey: null,
+  brutto: false, bruttoFactor: 1.19, rechnungStand: null,
 };
+
+// Betrag ggf. auf Brutto umrechnen + als € formatieren
+function money(v) {
+  if (v == null) return "–";
+  const x = state.brutto ? v * state.bruttoFactor : v;
+  return x.toLocaleString("de-DE", { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + " €";
+}
 function noteKey(c) { return (c.rahmenvertrag || "") + "|" + (c.rufnummer || ""); }
 const charts = {};
 
@@ -237,6 +257,7 @@ function renderFacets() {
     const counts = [...countValues(base, f).entries()].sort((a, b) => b[1] - a[1]);
     if (f.key === "__bindefrist") counts.sort((a, b) => BUCKET_ORDER.indexOf(a[0]) - BUCKET_ORDER.indexOf(b[0]));
     if (f.key === "__multisim") counts.sort((a, b) => MS_ORDER.indexOf(a[0]) - MS_ORDER.indexOf(b[0]));
+    if (f.key === "__kosten") counts.sort((a, b) => KOSTEN_ORDER.indexOf(a[0]) - KOSTEN_ORDER.indexOf(b[0]));
     const sel = state.filters[f.key] || new Set();
     const items = counts.slice(0, 12).map(([v, n]) =>
       `<li class="${sel.has(v) ? "on" : ""}" data-facet="${esc(f.key)}" data-val="${esc(v)}">
@@ -265,17 +286,17 @@ function renderGrid(rows) {
   }).join("");
   const body = sorted.slice(0, 500).map((c, i) => `<tr data-row="${i}">
     <td class="detail-cell"><span class="detail-btn">Details ▸</span>${state.notes[noteKey(c)] ? ' <span class="note-mark" title="Notiz vorhanden">📝</span>' : ""}</td>
-    <td>${esc(c.rufnummer)}</td>
-    <td>${esc(c.rahmenvertrag)}</td>
-    <td>${esc(c.kostenstellennutzer)}</td>
-    <td>${esc(c.kostenstelle)}</td>
-    <td>${esc(c.tarif)}</td>
-    <td>${bindefristBadge(c.bindefristende)}</td>
-    <td>${c.sperren ? '<span class="badge red">gesperrt</span>' : '<span class="badge green">aktiv</span>'}</td>
-    <td>${esc(c.vvl_berechtigung)}</td>
+    ${GRID_COLS.map((col) => `<td class="${MONEY_COLS.has(col) ? "money" : ""}">${gridCell(c, col)}</td>`).join("")}
   </tr>`).join("");
   t.innerHTML = `<thead><tr>${head}</tr></thead><tbody>${body}</tbody>`;
   t._rows = sorted;
+}
+
+function gridCell(c, col) {
+  if (col === "bindefristende") return bindefristBadge(c.bindefristende);
+  if (col === "__status") return c.sperren ? '<span class="badge red">gesperrt</span>' : '<span class="badge green">aktiv</span>';
+  if (MONEY_COLS.has(col)) return c[col] == null ? "–" : money(c[col]);
+  return esc(c[col]);
 }
 
 // ---- detail drawer --------------------------------------------------------
@@ -314,9 +335,29 @@ function openDrawer(contract) {
        <h4>Notiz / Kennzeichnung</h4>
        <textarea id="noteText" placeholder="z. B. VVL angefragt, Kündigung geprüft …">${esc(note)}</textarea>
        <button class="btn" id="noteSave">Notiz speichern</button>
+     </div>
+     <div class="dg" id="drawerKosten"><h4>Kosten (Monat)</h4>
+       ${contract._kosten_netto != null
+         ? `<div class="dl"><span>Netto</span><b>${money(contract._kosten_netto)}</b></div>
+            <div class="dl"><span>davon Rabatt</span><b>${money(contract._rabatt)}</b></div>
+            <div id="drawerKostenLines" class="hint">lade Positionen …</div>`
+         : '<div class="hint">keine Rechnungsdaten für diese Rufnummer</div>'}
      </div>${html}`;
   document.getElementById("drawer").hidden = false;
   document.getElementById("drawerOverlay").hidden = false;
+  if (contract._kosten_netto != null) loadDrawerKosten(contract.rufnummer);
+}
+
+async function loadDrawerKosten(rufnummer) {
+  try {
+    const lines = await api(`/api/costs/lines/${encodeURIComponent(rufnummer)}`);
+    const box = document.getElementById("drawerKostenLines");
+    if (!box) return;
+    const rows = lines.filter((l) => l.amount).map((l) =>
+      `<div class="dl"><span>${esc(l.item_name)} <span class="cat cat-${esc(l.category)}">${esc(l.category)}</span></span><b>${money(l.amount)}</b></div>`).join("");
+    box.classList.remove("hint");
+    box.innerHTML = rows || '<span class="hint">keine Einzelpositionen</span>';
+  } catch (e) { /* Drawer bleibt nutzbar */ }
 }
 function closeDrawer() {
   document.getElementById("drawer").hidden = true;
@@ -327,8 +368,10 @@ function closeDrawer() {
 function exportCsv() {
   const rows = filtered();
   const cols = Object.keys(state.fields);
-  const head = cols.map((c) => `"${state.fields[c].replace(/"/g, '""')}"`).join(";");
-  const body = rows.map((c) => cols.map((k) => {
+  const extra = { _kosten_netto: "Monatskosten netto", _rabatt: "Rabatt", _grundpreis: "Grundpreis" };
+  const allCols = [...cols, ...Object.keys(extra)];
+  const head = allCols.map((c) => `"${(state.fields[c] || extra[c]).replace(/"/g, '""')}"`).join(";");
+  const body = rows.map((c) => allCols.map((k) => {
     const v = c[k] == null ? "" : String(c[k]).replace(/"/g, '""');
     return `"${v}"`;
   }).join(";")).join("\r\n");
@@ -342,12 +385,16 @@ function exportCsv() {
 
 // ---- data loading ---------------------------------------------------------
 async function loadData() {
-  const [cur, fields, reports, notes] = await Promise.all([
+  const [cur, fields, reports, notes, invoices] = await Promise.all([
     api("/api/current"), api("/api/fields"), api("/api/reports"), api("/api/notes"),
+    api("/api/invoices"),
   ]);
   state.all = cur.contracts; state.fields = fields; state.stand = cur.stand; state.notes = notes;
-  document.getElementById("stand").textContent = cur.stand ? "Stand: " + fmtDate(cur.stand) : "";
+  state.bruttoFactor = cur.brutto_factor || 1.19; state.rechnungStand = cur.rechnung_stand;
+  const teile = [cur.stand ? "Bestand " + fmtDate(cur.stand) : "", cur.rechnung_stand ? "Rechnung " + fmtDate(cur.rechnung_stand) : ""].filter(Boolean);
+  document.getElementById("stand").textContent = teile.join(" · ");
   renderReportList(reports);
+  renderInvoiceList(invoices);
   fillVerlaufRv(cur.rahmenvertraege);
   const empty = !state.all.length;
   document.getElementById("emptyState").hidden = !empty;
@@ -385,13 +432,22 @@ function renderReportList(reports) {
        <button class="del" data-del="${r.id}" title="löschen">✕</button></li>`).join("");
 }
 
+function renderInvoiceList(invoices) {
+  const ul = document.getElementById("invoiceList");
+  if (!invoices.length) { ul.innerHTML = '<li class="muted">noch keine</li>'; return; }
+  ul.innerHTML = invoices.map((r) =>
+    `<li><span><strong>${fmtDate(r.period_start)}</strong> · <span class="meta">Nr. ${esc(r.invoice_number || "")}</span><br>
+       <span class="meta">${money(r.total_net)} netto · ${r.line_count} Positionen</span></span>
+       <button class="del" data-delinv="${r.id}" title="löschen">✕</button></li>`).join("");
+}
+
 // ---- auth -----------------------------------------------------------------
 let authMode = "login";
 function showAuth(mode) {
   authMode = mode;
   document.getElementById("authOverlay").hidden = false;
   document.getElementById("appMain").hidden = true;
-  ["logoutBtn", "verlaufBtn", "settingsBtn"].forEach((i) => (document.getElementById(i).hidden = true));
+  ["logoutBtn", "verlaufBtn", "settingsBtn", "kostenBtn", "netbrutto"].forEach((i) => (document.getElementById(i).hidden = true));
   const setup = mode === "setup";
   document.getElementById("authTitle").textContent = setup ? "Passwort festlegen" : "Anmelden";
   document.getElementById("authHint").textContent = setup
@@ -404,7 +460,7 @@ function showAuth(mode) {
 function showApp() {
   document.getElementById("authOverlay").hidden = true;
   document.getElementById("appMain").hidden = false;
-  ["logoutBtn", "verlaufBtn", "settingsBtn"].forEach((i) => (document.getElementById(i).hidden = false));
+  ["logoutBtn", "verlaufBtn", "settingsBtn", "kostenBtn", "netbrutto"].forEach((i) => (document.getElementById(i).hidden = false));
   loadData();
 }
 async function submitAuth() {
@@ -466,10 +522,22 @@ document.getElementById("search").addEventListener("input", (e) => { state.searc
 
 document.getElementById("fileInput").addEventListener("change", async (e) => {
   const file = e.target.files[0]; if (!file) return;
+  const isXml = file.name.toLowerCase().endsWith(".xml");
   const fd = new FormData(); fd.append("file", file);
-  try { const r = await api("/api/reports", { method: "POST", body: fd }); toast(`Importiert: ${r.row_count} Verträge`); await loadData(); }
-  catch (err) { toast("Upload fehlgeschlagen: " + err.message, true); }
+  try {
+    const r = await api(isXml ? "/api/invoices" : "/api/reports", { method: "POST", body: fd });
+    toast(isXml ? `Rechnung: ${r.line_count} Positionen` : `Report: ${r.row_count} Verträge`);
+    await loadData();
+  } catch (err) { toast("Upload fehlgeschlagen: " + err.message, true); }
   e.target.value = "";
+});
+
+// Netto/Brutto-Umschalter
+document.getElementById("netbrutto").addEventListener("click", (e) => {
+  const opt = e.target.closest("[data-nb]"); if (!opt) return;
+  state.brutto = opt.dataset.nb === "brutto";
+  document.querySelectorAll("#netbrutto .nb-opt").forEach((b) => b.classList.toggle("active", b === opt));
+  render();
 });
 
 document.getElementById("rvList").addEventListener("click", (e) => {
@@ -487,6 +555,52 @@ document.getElementById("reportList").addEventListener("click", async (e) => {
   await api(`/api/reports/${del.dataset.del}`, { method: "DELETE" });
   toast("Report gelöscht"); await loadData();
 });
+
+document.getElementById("invoiceList").addEventListener("click", async (e) => {
+  const del = e.target.closest("[data-delinv]"); if (!del) return;
+  if (!confirm("Diese Rechnung löschen?")) return;
+  await api(`/api/invoices/${del.dataset.delinv}`, { method: "DELETE" });
+  toast("Rechnung gelöscht"); await loadData();
+});
+
+// ---- Kosten-Modal (Controlling) ------------------------------------------
+document.getElementById("kostenBtn").addEventListener("click", showKosten);
+document.getElementById("kostenClose").addEventListener("click", () => { document.getElementById("kostenOverlay").hidden = true; });
+document.getElementById("kostenOverlay").addEventListener("click", (e) => { if (e.target.id === "kostenOverlay") e.currentTarget.hidden = true; });
+document.querySelectorAll("#kostenOverlay .tab").forEach((tab) => {
+  tab.addEventListener("click", () => {
+    document.querySelectorAll("#kostenOverlay .tab").forEach((t) => t.classList.remove("active"));
+    document.querySelectorAll("#kostenOverlay .panel").forEach((p) => p.classList.remove("active"));
+    tab.classList.add("active");
+    document.getElementById("ktab-" + tab.dataset.ktab).classList.add("active");
+  });
+});
+
+async function showKosten() {
+  document.getElementById("kostenOverlay").hidden = false;
+  const [ks, trend] = await Promise.all([api("/api/costs/kostenstellen"), api("/api/costs/trend")]);
+  // Kostenstellen: Top 15 als Balken + volle Tabelle
+  const top = ks.slice(0, 15);
+  drawKostenChart("chartKostenstellen", "bar", top.map((x) => x.kostenstelle),
+    top.map((x) => state.brutto ? x.netto * state.bruttoFactor : x.netto), "Kosten je Kostenstelle");
+  document.getElementById("tblKostenstellen").innerHTML =
+    "<tr><th>Kostenstelle</th><th>Verträge</th><th class='money'>Kosten</th></tr>" +
+    ks.map((x) => `<tr><td>${esc(x.kostenstelle)}</td><td>${x.anzahl_rufnummern}</td><td class="money">${money(x.netto)}</td></tr>`).join("");
+  // Trend
+  drawKostenChart("chartKostentrend", "line", trend.map((t) => fmtDate(t.period)),
+    trend.map((t) => state.brutto ? t.netto * state.bruttoFactor : t.netto), "Netto-Kosten je Rechnung");
+}
+
+function drawKostenChart(id, type, labels, data, title) {
+  if (charts[id]) charts[id].destroy();
+  charts[id] = new Chart(document.getElementById(id), {
+    type,
+    data: { labels, datasets: [{ label: title, data, backgroundColor: type === "bar" ? MAGENTA : "transparent", borderColor: MAGENTA, borderRadius: 6, tension: .2 }] },
+    options: { responsive: true, maintainAspectRatio: false, animation: false,
+      plugins: { legend: { display: false }, title: { display: true, text: title } },
+      scales: { x: { ticks: { font: { size: 10 }, maxRotation: 60 } }, y: { beginAtZero: true } } },
+  });
+}
 
 document.getElementById("chips").addEventListener("click", (e) => {
   if (e.target.id === "clearAll") return clearFilters();

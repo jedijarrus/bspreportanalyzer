@@ -15,10 +15,14 @@
     </div>
     <div class="topbar-actions">
       <span class="stand" id="stand"></span>
+      <div class="netbrutto" id="netbrutto" hidden>
+        <button class="nb-opt active" data-nb="netto">Netto</button><button class="nb-opt" data-nb="brutto">Brutto</button>
+      </div>
+      <button class="btn" id="kostenBtn" hidden>Kosten</button>
       <button class="btn" id="verlaufBtn" hidden>Verlauf</button>
-      <label class="btn btn-primary">
-        Report laden
-        <input type="file" id="fileInput" accept=".xlsx" hidden>
+      <label class="btn btn-primary" title="Report (.xlsx) oder Rechnung (.xml)">
+        Laden
+        <input type="file" id="fileInput" accept=".xlsx,.xml" hidden>
       </label>
       <button class="btn" id="settingsBtn" hidden title="Einstellungen">⚙</button>
       <button class="btn" id="logoutBtn" hidden>Abmelden</button>
@@ -77,12 +81,36 @@
   <div id="drawerOverlay" class="drawer-overlay" hidden></div>
   <aside id="drawer" class="drawer" hidden></aside>
 
-  <!-- Einstellungen-Modal (Report-Verwaltung) -->
+  <!-- Einstellungen-Modal (Report- und Rechnungs-Verwaltung) -->
   <div id="settingsOverlay" class="modal-overlay" hidden>
     <div class="modal-box">
-      <div class="modal-head"><h2>Einstellungen · Reports</h2><button class="btn" id="settingsClose">✕</button></div>
-      <p class="hint">Hochgeladene Reports. Löschen entfernt den Snapshot (und seine Verträge aus der aktuellen Sicht).</p>
+      <div class="modal-head"><h2>Einstellungen</h2><button class="btn" id="settingsClose">✕</button></div>
+      <h3>Reports (.xlsx)</h3>
+      <p class="hint">Löschen entfernt den Snapshot aus der aktuellen Sicht.</p>
       <ul id="reportList" class="report-list"></ul>
+      <h3>Rechnungen (.xml)</h3>
+      <p class="hint">Löschen entfernt die Rechnung und ihre Kostenzuordnung.</p>
+      <ul id="invoiceList" class="report-list"></ul>
+    </div>
+  </div>
+
+  <!-- Kosten-Modal (Controlling) -->
+  <div id="kostenOverlay" class="modal-overlay" hidden>
+    <div class="modal-box modal-wide">
+      <div class="modal-head"><h2>Kosten · Controlling</h2><button class="btn" id="kostenClose">✕</button></div>
+      <div class="tabs">
+        <button class="tab active" data-ktab="kostenstellen">Kostenstellen</button>
+        <button class="tab" data-ktab="trend">Kostentrend</button>
+      </div>
+      <div class="panel active" id="ktab-kostenstellen">
+        <p class="hint">Kosten je Kostenstelle (neueste Rechnung).</p>
+        <div class="chart-box" style="height:300px"><canvas id="chartKostenstellen"></canvas></div>
+        <div class="table-wrap"><table id="tblKostenstellen"></table></div>
+      </div>
+      <div class="panel" id="ktab-trend">
+        <p class="hint">Netto-Kosten über die geladenen Rechnungen (Zeitachse).</p>
+        <div class="chart-box" style="height:320px"><canvas id="chartKostentrend"></canvas></div>
+      </div>
     </div>
   </div>
 
