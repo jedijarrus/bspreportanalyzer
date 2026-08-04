@@ -168,6 +168,7 @@ def create_app(secret_key: str | None = None) -> FastAPI:
         fleet = analytics.current_fleet(db.all_contracts())
         stand = max((c.get("_report_date") or "" for c in fleet), default=None)
         rvs = sorted({c.get("rahmenvertrag") for c in fleet if c.get("rahmenvertrag")})
+        frische = analytics.fleet_freshness(fleet, _today(), config.MAX_REPORT_AGE_DAYS)
 
         norm = analytics.normalize_rufnummer
         latest = _latest_invoice(db)
@@ -201,7 +202,9 @@ def create_app(secret_key: str | None = None) -> FastAPI:
 
         return {"stand": stand or None, "rahmenvertraege": rvs, "contracts": fleet,
                 "netto_factor": 1.0, "brutto_factor": brutto_factor,
-                "rechnung_stand": rechnung_stand, "datenauslastung": auslastung}
+                "rechnung_stand": rechnung_stand, "datenauslastung": auslastung,
+                "stale": frische["stale"], "stand_alter_tage": frische["stand_alter_tage"],
+                "max_age_tage": frische["max_age_tage"], "frische": frische["rv"]}
 
     # ---- Rechnungen / Kosten -------------------------------------------
     @app.post("/api/invoices", status_code=201, dependencies=[Depends(require_auth)])
