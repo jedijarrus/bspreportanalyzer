@@ -280,7 +280,7 @@ def create_app(secret_key: str | None = None) -> FastAPI:
             "prev_period": prev.get("period_start") if prev else None,
             "gb_trend": analytics.fleet_gb_trend(db.all_invoice_lines()),
             "zuordnungsluecken": analytics.zuordnungsluecken(lines, list(cmap.values())),
-            "top_nutzer_gesamt": analytics.top_nutzer_gesamt(
+            "top_gesamt": analytics.top_rufnummer_gesamt(
                 db.all_invoice_lines(),
                 {k: (c.get("kostenstellennutzer")) for k, c in cmap.items()}),
         }

@@ -491,17 +491,17 @@ def test_zuordnungsluecken_geister_und_ohne_rechnung():
     assert z["ohne_rechnung"] == ["0180-9"]     # Vertrag, keine Rechnungsposition
 
 
-def test_top_nutzer_gesamt_je_nutzer_ueber_alle_rechnungen():
-    lines = [  # Nutzer steht NICHT auf der Zeile -> kommt aus nutzer_map (Report)
+def test_top_rufnummer_gesamt_unique_je_rufnummer():
+    lines = [
         {"rufnummer": "0151 1", "amount": 60, "_period_start": "2026-05-01"},
-        {"rufnummer": "0151 1", "amount": -10, "_period_start": "2026-05-01"},
         {"rufnummer": "0151 1", "amount": 50, "_period_start": "2026-06-01"},
         {"rufnummer": "0170 2", "amount": 40, "_period_start": "2026-06-01"},  # Anna, zweite Nummer
-        {"rufnummer": "0180 3", "amount": 25, "_period_start": "2026-06-01"},  # kein Nutzer -> Fallback
+        {"rufnummer": "0180 3", "amount": 25, "_period_start": "2026-06-01"},  # Pool, kein Nutzer
     ]
     nz = analytics.normalize_rufnummer
-    nutzer_map = {nz("0151 1"): "Anna", nz("0170 2"): "Anna", nz("0180 3"): None}
-    top = analytics.top_nutzer_gesamt(lines, nutzer_map)
-    assert top[0]["nutzer"] == "Anna" and top[0]["netto"] == 140.0     # (60-10+50) + 40, zwei Nummern
-    assert top[0]["rufnummer"] in ("0151 1", "0170 2")                 # teuerste Nummer, klickbar
-    assert any(r["nutzer"] == "0180 3" and r["netto"] == 25.0 for r in top)  # ohne Nutzer -> Rufnummer-Label
+    nutzer_map = {nz("0151 1"): "Anna", nz("0170 2"): "Anna"}  # 0180 3 = Pool, kein Nutzer
+    top = analytics.top_rufnummer_gesamt(lines, nutzer_map)
+    # je Rufnummer eine Zeile — Anna NICHT zusammengefasst
+    assert top[0] == {"rufnummer": "0151 1", "netto": 110.0, "nutzer": "Anna"}  # 60+50
+    assert {r["rufnummer"] for r in top} == {"0151 1", "0170 2", "0180 3"}
+    assert next(r for r in top if r["rufnummer"] == "0180 3")["nutzer"] is None
