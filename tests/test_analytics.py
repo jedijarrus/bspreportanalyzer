@@ -294,3 +294,66 @@ def test_trend_zeitreihe():
     assert t[1]["total"] == 3
     # chronologisch sortiert
     assert t[0]["report_date"] <= t[1]["report_date"]
+
+
+# ---- Frische / Veraltet-Guardrail ---------------------------------------
+FRESH_TODAY = dt.date(2026, 8, 4)
+
+
+def test_fleet_freshness_alles_frisch_nicht_stale():
+    fleet = [
+        _r("RV-A", "A1", "2026-08-01", 3),    # 3 Tage
+        _r("RV-B", "B1", "2026-07-25", 4),    # 10 Tage
+    ]
+    f = analytics.fleet_freshness(fleet, FRESH_TODAY, max_age_days=14)
+    assert f["stale"] is False
+    assert f["rv"]["RV-A"]["alter_tage"] == 3
+    assert f["rv"]["RV-B"]["alter_tage"] == 10
+    assert f["stand_alter_tage"] == 10  # worst case = ältester Stand
+    assert f["max_age_tage"] == 14
+
+
+def test_fleet_freshness_ein_rv_veraltet_anderer_frisch():
+    fleet = [
+        _r("RV-A", "A1", "2026-06-25", 1),    # 40 Tage -> veraltet
+        _r("RV-B", "B1", "2026-08-01", 2),    # 3 Tage
+    ]
+    f = analytics.fleet_freshness(fleet, FRESH_TODAY, max_age_days=14)
+    assert f["rv"]["RV-A"]["stale"] is True
+    assert f["rv"]["RV-B"]["stale"] is False
+    assert f["stale"] is True
+    assert f["stand_alter_tage"] == 40  # ältester Stand
+    assert f["rv"]["RV-A"]["report_date"] == "2026-06-25"
+
+
+def test_fleet_freshness_grenze_14_frisch_15_stale():
+    f14 = analytics.fleet_freshness([_r("RV", "A", "2026-07-21", 1)], FRESH_TODAY, 14)
+    assert f14["rv"]["RV"]["alter_tage"] == 14 and f14["stale"] is False
+    f15 = analytics.fleet_freshness([_r("RV", "A", "2026-07-20", 1)], FRESH_TODAY, 14)
+    assert f15["rv"]["RV"]["alter_tage"] == 15 and f15["stale"] is True
+
+
+def test_fleet_freshness_leere_flotte():
+    f = analytics.fleet_freshness([], FRESH_TODAY, 14)
+    assert f["rv"] == {}
+    assert f["stale"] is False
+    assert f["stand_alter_tage"] is None
+
+
+def test_fleet_freshness_ohne_report_date_konservativ_stale():
+    f = analytics.fleet_freshness([_r("RV", "A", None, 1)], FRESH_TODAY, 14)
+    assert f["rv"]["RV"]["alter_tage"] is None
+    assert f["rv"]["RV"]["stale"] is True
+    assert f["stale"] is True
+
+
+def test_fleet_freshness_zukunftsdatum_ist_frisch():
+    # Tippfehler im Dateinamen -> Datum in der Zukunft: nicht crashen, als frisch werten
+    f = analytics.fleet_freshness([_r("RV", "A", "2026-09-01", 1)], FRESH_TODAY, 14)
+    assert f["rv"]["RV"]["stale"] is False
+
+
+def test_fleet_freshness_env_fenster_wird_respektiert():
+    fleet = [_r("RV", "A", "2026-07-28", 1)]  # 7 Tage
+    assert analytics.fleet_freshness(fleet, FRESH_TODAY, max_age_days=14)["stale"] is False
+    assert analytics.fleet_freshness(fleet, FRESH_TODAY, max_age_days=5)["stale"] is True

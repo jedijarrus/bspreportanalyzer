@@ -165,6 +165,24 @@ def test_current_aktuelle_flotte(client):
     assert len(body["contracts"]) == 12  # synthetische RVs je Zeile unterschiedlich
 
 
+def test_current_enthaelt_frische_felder(client):
+    _upload(client, rows=5, seed=1)
+    body = client.get("/api/current").json()
+    assert body["max_age_tage"] == 14
+    assert isinstance(body["stale"], bool)
+    assert isinstance(body["frische"], dict) and body["frische"]  # je RV ein Eintrag
+    any_rv = next(iter(body["frische"].values()))
+    assert set(any_rv) == {"report_date", "alter_tage", "stale"}
+
+
+def test_current_alter_report_wird_als_veraltet_markiert(client):
+    # Report-Datum weit in der Vergangenheit (aus Dateiname) -> veraltet
+    _upload(client, rows=5, seed=1, name="20200101-000000_RVKU-KI_000001_1.xlsx")
+    body = client.get("/api/current").json()
+    assert body["stale"] is True
+    assert body["stand_alter_tage"] > 14
+
+
 def test_notes_setzen_und_lesen(client):
     assert client.post("/api/notes", json={"key": "RV-A|0151", "note": "VVL prüfen"}).status_code == 200
     assert client.get("/api/notes").json()["RV-A|0151"] == "VVL prüfen"

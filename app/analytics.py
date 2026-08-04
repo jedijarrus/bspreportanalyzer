@@ -60,6 +60,53 @@ def current_fleet(rows: list[dict]) -> list[dict]:
     ]
 
 
+def fleet_freshness(fleet: list[dict], today: dt.date, max_age_days: int = 14) -> dict:
+    """Frische der aktuellen Flotte je Rahmenvertrag bewerten.
+
+    Ändert die Auswahl NICHT (das macht `current_fleet`), sondern berechnet
+    nur, wie alt der zugrunde liegende Report-Stand je RV ist, und signalisiert
+    „veraltet", wenn älter als `max_age_days`. So sieht der Nutzer immer die
+    neuesten Daten, wird aber gewarnt, wenn nichts Frisches vorliegt.
+
+    Rückgabe:
+        {
+          "max_age_tage": int,
+          "stale": bool,                 # irgendein RV veraltet
+          "stand_alter_tage": int|None,  # Alter des ÄLTESTEN RV-Stands (worst case)
+          "rv": {rv: {"report_date": iso|None, "alter_tage": int|None, "stale": bool}},
+        }
+
+    Bezugsdatum ist `_report_date` (fachlicher Stand). Fehlt es, gilt der RV
+    konservativ als veraltet. Zukunftsdatum (Alter < 0) gilt als frisch.
+    """
+    # neuestes Report-Datum je RV (Flotte enthält i.d.R. genau eines je RV)
+    newest: dict[str, dt.date | None] = {}
+    for c in fleet:
+        rv = c.get("rahmenvertrag")
+        if not rv:
+            continue
+        d = _as_date(c.get("_report_date"))
+        if rv not in newest or (d is not None and (newest[rv] is None or d > newest[rv])):
+            newest[rv] = d
+
+    rv_map: dict[str, dict] = {}
+    for rv, d in newest.items():
+        if d is None:
+            rv_map[rv] = {"report_date": None, "alter_tage": None, "stale": True}
+        else:
+            alter = (today - d).days
+            rv_map[rv] = {"report_date": d.isoformat(), "alter_tage": alter,
+                          "stale": alter > max_age_days}
+
+    alter_werte = [v["alter_tage"] for v in rv_map.values() if v["alter_tage"] is not None]
+    return {
+        "max_age_tage": max_age_days,
+        "stale": any(v["stale"] for v in rv_map.values()),
+        "stand_alter_tage": max(alter_werte) if alter_werte else None,
+        "rv": rv_map,
+    }
+
+
 # ---- Bindefrist / VVL ----------------------------------------------------
 def bindefrist_buckets(contracts: list[dict], today: dt.date) -> dict[str, int]:
     """Linien nach Restlaufzeit der Bindefrist gruppieren."""

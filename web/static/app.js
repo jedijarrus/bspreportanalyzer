@@ -450,9 +450,26 @@ async function loadData() {
   state.invoices = invoices; state.rahmenvertraege = cur.rahmenvertraege;
   state.bruttoFactor = cur.brutto_factor || 1.19; state.rechnungStand = cur.rechnung_stand;
   state.auslastung = cur.datenauslastung;
+  state.frische = cur.frische || {}; state.stale = cur.stale;
+  state.standAlterTage = cur.stand_alter_tage; state.maxAgeTage = cur.max_age_tage;
+  renderStaleBadge();
   renderReportList(reports);
   renderInvoiceList(invoices);
   navigate();
+}
+
+// Globales Frische-Signal im Header: neuester Report älter als das Fenster.
+// Nur Warnung — es wird nichts ausgeblendet (Fallback bleibt der neueste Report).
+function renderStaleBadge() {
+  const el = document.getElementById("staleBadge");
+  if (!el) return;
+  if (state.stale && state.standAlterTage != null) {
+    el.textContent = `⚠ ${state.standAlterTage} Tage alt`;
+    el.title = `Neuester Report ist älter als ${state.maxAgeTage} Tage — es gibt nichts Neueres.`;
+    el.hidden = false;
+  } else {
+    el.hidden = true;
+  }
 }
 
 function renderVertraege() {
@@ -495,11 +512,15 @@ function renderRvList() {
   }
   const sel = state.filters["rahmenvertrag"] || new Set();
   const items = [...m.entries()].sort((a, b) => (a[0] < b[0] ? -1 : 1));
+  const fr = state.frische || {};
   document.getElementById("rvList").innerHTML = items.length
-    ? items.map(([rv, e]) =>
-        `<li data-rv="${esc(rv)}" class="${sel.has(rv) ? "on" : ""}">
+    ? items.map(([rv, e]) => {
+        const stale = fr[rv] && fr[rv].stale;
+        const tag = stale ? ` <span class="tag-stale" title="älter als ${state.maxAgeTage} Tage">veraltet</span>` : "";
+        return `<li data-rv="${esc(rv)}" class="${sel.has(rv) ? "on" : ""}">
            <strong>${esc(rv)}</strong>
-           <div class="meta">${e.n} Verträge · Stand ${fmtDate(e.stand)}</div></li>`).join("")
+           <div class="meta">${e.n} Verträge · Stand ${fmtDate(e.stand)}${tag}</div></li>`;
+      }).join("")
     : '<li class="muted">noch keine Daten</li>';
 }
 

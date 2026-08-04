@@ -48,3 +48,7 @@ env/
 .DS_Store
 Thumbs.db
 *.swp
+
+# Lokale Scratch-/Laufzeit-Logs
+scratch_*
+*.log

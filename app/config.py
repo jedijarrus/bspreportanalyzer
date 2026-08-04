@@ -15,6 +15,10 @@ INVOICE_DIR = Path(os.environ.get("BSP_INVOICE_DIR", DATA_DIR / "rechnungen"))
 # Maximale Upload-Größe (Schutz gegen OOM / Zip-Bomb). Default 25 MB.
 MAX_UPLOAD_BYTES = int(os.environ.get("BSP_MAX_UPLOAD_MB", "25")) * 1024 * 1024
 
+# Frische-Fenster: Report-Stände älter als so viele Tage gelten als „veraltet"
+# (nur Warn-Signal, es wird nichts ausgeblendet). Default 14 Tage.
+MAX_REPORT_AGE_DAYS = int(os.environ.get("BSP_MAX_REPORT_AGE_DAYS", "14"))
+
 
 def get_secret_key() -> str:
     """Secret für signierte Session-Cookies.
