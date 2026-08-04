@@ -395,6 +395,29 @@ def zuordnungsluecken(lines: list[dict], fleet: list[dict]) -> dict:
     }
 
 
+def top_nutzer_gesamt(lines: list[dict], nutzer_map: dict, n: int = 12) -> list[dict]:
+    """Top-Kostentreiber über ALLE Rechnungen, je Kostenstellennutzer summiert.
+
+    Netto wird je Rufnummer über alle Rechnungen summiert; der Nutzer kommt aus
+    `nutzer_map` (normalisierte Rufnummer → Nutzer, aus dem Report/der Flotte — die
+    Rechnungszeile trägt ihn oft nicht). Ohne bekannten Nutzer dient die Rufnummer
+    als Fallback-Label. Repräsentative Rufnummer = teuerste des Nutzers (Klick →
+    Monitoring).
+    """
+    agg: dict[str, float] = {}
+    best: dict[str, tuple[str, float]] = {}
+    for ruf, v in kosten_je_rufnummer(lines).items():
+        nutzer = nutzer_map.get(normalize_rufnummer(ruf)) or ruf
+        netto = v["netto"]
+        agg[nutzer] = agg.get(nutzer, 0.0) + netto
+        if nutzer not in best or netto > best[nutzer][1]:
+            best[nutzer] = (ruf, netto)
+    rows = [{"nutzer": nutzer, "netto": round(x, 2), "rufnummer": best[nutzer][0]}
+            for nutzer, x in agg.items()]
+    rows.sort(key=lambda r: -r["netto"])
+    return rows[:n]
+
+
 # ---- Rufnummer-Monitoring (Verlauf über Monate) --------------------------
 def linie_verlauf(all_lines: list[dict], rufnummer: str) -> list[dict]:
     """Monatsreihe EINER Rufnummer über alle Rechnungen.

@@ -749,15 +749,19 @@ async function renderControlling() {
 
       <div class="section-grid">
         <div>
-          <div class="section-title">Kosten je Rahmenvertrag</div>
-          <div class="chart-box" style="height:260px"><canvas id="ctrlRv"></canvas></div>
-        </div>
-        <div>
-          <div class="section-title">Top-Kostentreiber <span class="muted">(Zeile klicken = Monitoring)</span></div>
+          <div class="section-title">Top-Kostentreiber <span class="muted">(dieser Monat · Zeile klicken = Monitoring)</span></div>
           <div class="table-wrap"><table class="grid-table"><thead><tr><th>Mitarbeiter</th><th>Rufnummer</th><th class="money">Netto</th></tr></thead>
             <tbody>${d.top_treiber.map((t) => `<tr class="linie-open" data-goto-ruf="${esc(t.rufnummer)}" title="Monitoring öffnen"><td>${esc(t.nutzer || "–")}</td><td>${esc(t.rufnummer)}</td><td class="money">${money(t.netto)}</td></tr>`).join("")}</tbody></table></div>
         </div>
+        <div>
+          <div class="section-title">Top-Kostentreiber gesamt <span class="muted">(alle Rechnungen · je Nutzer · Zeile klicken = Monitoring)</span></div>
+          <div class="table-wrap"><table class="grid-table"><thead><tr><th>Mitarbeiter</th><th class="money">Netto gesamt</th></tr></thead>
+            <tbody>${(d.top_nutzer_gesamt || []).map((t) => `<tr class="linie-open" data-goto-ruf="${esc(t.rufnummer || "")}" title="Monitoring öffnen"><td>${esc(t.nutzer || "–")}</td><td class="money">${money(t.netto)}</td></tr>`).join("")}</tbody></table></div>
+        </div>
       </div>
+
+      <div class="section-title">Kosten je Rahmenvertrag</div>
+      <div class="chart-box" style="height:260px"><canvas id="ctrlRv"></canvas></div>
 
       <div class="section-title">Zuordnung Rechnung ↔ Report <span class="muted">(klicken = Monitoring)</span></div>
       ${zlHtml}
