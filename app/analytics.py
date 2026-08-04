@@ -355,6 +355,94 @@ def kosten_trend(lines: list[dict]) -> list[dict]:
     return [{"period": p, "netto": v} for p, v in sorted(agg.items())]
 
 
+# ---- Rufnummer-Monitoring (Verlauf über Monate) --------------------------
+def linie_verlauf(all_lines: list[dict], rufnummer: str) -> list[dict]:
+    """Monatsreihe EINER Rufnummer über alle Rechnungen.
+
+    `all_lines` = Zeilen aller Rechnungen (mit `_period_start`), wie
+    store.all_invoice_lines liefert. Ergebnis je Periode chronologisch:
+    netto / grundpreis / optionen / rabatt / verbrauch, Datenvolumen
+    gebucht+verbraucht + auslastung_pct, sowie die Options-Namen.
+    """
+    target = normalize_rufnummer(rufnummer)
+    by_period: dict[str, dict] = {}
+    for l in all_lines:
+        if normalize_rufnummer(l.get("rufnummer")) != target:
+            continue
+        p = l.get("_period_start") or l.get("period_start") or ""
+        m = by_period.setdefault(p, {
+            "period": p, "netto": 0.0, "grundpreis": 0.0, "optionen": 0.0,
+            "rabatt": 0.0, "verbrauch": 0.0, "data_contracted_gb": None,
+            "data_used_gb": None, "optionen_namen": []})
+        amt = l.get("amount") or 0.0
+        m["netto"] += amt
+        cat = l.get("category")
+        if cat == "grundpreis":
+            m["grundpreis"] += amt
+        elif cat == "option":
+            m["optionen"] += amt
+            name = (l.get("item_name") or "").strip()
+            if name and name not in m["optionen_namen"]:
+                m["optionen_namen"].append(name)
+        elif cat == "rabatt":
+            m["rabatt"] += amt
+        elif cat == "verbrauch":
+            m["verbrauch"] += amt
+        cg, ug = l.get("data_contracted_gb"), l.get("data_used_gb")
+        if cg is not None:
+            m["data_contracted_gb"] = cg
+        if ug is not None:
+            m["data_used_gb"] = ug
+
+    out = []
+    for m in by_period.values():
+        for k in ("netto", "grundpreis", "optionen", "rabatt", "verbrauch"):
+            m[k] = round(m[k], 2)
+        cg, ug = m["data_contracted_gb"], m["data_used_gb"]
+        m["auslastung_pct"] = round(ug / cg * 100, 1) if cg else None
+        out.append(m)
+    out.sort(key=lambda x: x["period"])
+    return out
+
+
+def linie_auffaelligkeiten(verlauf: list[dict], sprung_eur: float = 10.0,
+                           sprung_pct: float = 30.0, rabatt_eur: float = 1.0) -> list[dict]:
+    """Monat-zu-Monat-Auffälligkeiten EINER Linie (nur Fakten, kein Sparen).
+
+    Erkennt: Overage (>100% je Monat), Kostensprung (|Δ|≥sprung_eur UND
+    ≥sprung_pct des Vormonats), Rabatt weg/gesunken (≥rabatt_eur), Option
+    hinzu/entfallen. `verlauf` = Ausgabe von linie_verlauf.
+    """
+    out: list[dict] = []
+    for i, m in enumerate(verlauf):
+        pct = m.get("auslastung_pct")
+        if pct is not None and pct > 100:
+            out.append({"period": m["period"], "typ": "overage",
+                        "text": f"Datenvolumen {pct:.0f}% ausgelastet", "delta_eur": None})
+        if i == 0:
+            continue
+        prev = verlauf[i - 1]
+        d = round(m["netto"] - prev["netto"], 2)
+        base = prev["netto"]
+        if abs(d) >= sprung_eur and (base == 0 or abs(d) / abs(base) * 100 >= sprung_pct):
+            out.append({"period": m["period"], "typ": "kostensprung",
+                        "text": f"Netto {'+' if d >= 0 else ''}{d:.2f} € ggü. Vormonat",
+                        "delta_eur": d})
+        drab = round(abs(prev.get("rabatt") or 0) - abs(m.get("rabatt") or 0), 2)
+        if drab >= rabatt_eur:
+            out.append({"period": m["period"], "typ": "rabatt_weg",
+                        "text": f"Rabatt {drab:.2f} € geringer als Vormonat", "delta_eur": drab})
+        prev_opt = set(prev.get("optionen_namen") or [])
+        cur_opt = set(m.get("optionen_namen") or [])
+        for name in sorted(cur_opt - prev_opt):
+            out.append({"period": m["period"], "typ": "option_neu",
+                        "text": f"Option neu: {name}", "delta_eur": None})
+        for name in sorted(prev_opt - cur_opt):
+            out.append({"period": m["period"], "typ": "option_weg",
+                        "text": f"Option entfallen: {name}", "delta_eur": None})
+    return out
+
+
 # ---- Trend ---------------------------------------------------------------
 def trend(snapshots: list[dict], today: dt.date) -> list[dict[str, Any]]:
     """Zeitreihe von Kennzahlen über mehrere Report-Snapshots.

@@ -374,6 +374,7 @@ function openDrawer(contract) {
     `<div class="drawer-head">
        <div><div class="muted">Vertrag${rv}</div><h3>${esc(contract.rufnummer)}</h3></div>
        <div class="drawer-actions">
+         <button class="btn" id="drawerVerlauf" title="Monitoring über Monate">Verlauf</button>
          <button class="btn" id="drawerPrint" title="Drucken / als PDF speichern">🖨 Drucken</button>
          <button class="btn" id="drawerClose">✕</button>
        </div>
@@ -486,16 +487,27 @@ function currentRoute() {
 }
 function navigate() {
   if (!Array.isArray(state.all)) return;
+  const m = location.hash.match(/^#\/linie\/(.+)$/);
+  if (m) {
+    if (!state.route) renderBase("vertraege");   // Hintergrund für Deep-Link
+    openLinie(decodeURIComponent(m[1]));
+    return;
+  }
+  hideLinie();
   const r = currentRoute();
-  state.route = r.name;
-  document.querySelectorAll(".navtab").forEach((t) => t.classList.toggle("active", t.dataset.route === r.name));
+  state.baseHash = location.hash || "#/vertraege";
+  renderBase(r.name, r.param);
+}
+function renderBase(name, param) {
+  state.route = name;
+  document.querySelectorAll(".navtab").forEach((t) => t.classList.toggle("active", t.dataset.route === name));
   ["vertraege", "rechnungen", "controlling"].forEach((v) =>
-    document.getElementById("view-" + v).hidden = v !== r.name);
+    document.getElementById("view-" + v).hidden = v !== name);
   // Suche/Netto-Brutto nur in Verträgen relevant -> Suche ausblenden ausserhalb
-  document.querySelector(".topbar-mid").style.visibility = r.name === "vertraege" ? "visible" : "hidden";
-  if (r.name === "vertraege") renderVertraege();
-  else if (r.name === "rechnungen") renderRechnungen(r.param);
-  else if (r.name === "controlling") renderControlling();
+  document.querySelector(".topbar-mid").style.visibility = name === "vertraege" ? "visible" : "hidden";
+  if (name === "vertraege") renderVertraege();
+  else if (name === "rechnungen") renderRechnungen(param);
+  else if (name === "controlling") renderControlling();
 }
 window.addEventListener("hashchange", navigate);
 function clearRendered() {
@@ -726,7 +738,7 @@ async function renderControlling() {
         <div>
           <div class="section-title">Top-Kostentreiber <span class="muted">(je Vertrag / Mitarbeiter)</span></div>
           <div class="table-wrap"><table class="grid-table"><thead><tr><th>Mitarbeiter</th><th>Rufnummer</th><th class="money">Netto</th></tr></thead>
-            <tbody>${d.top_treiber.map((t) => `<tr><td>${esc(t.nutzer || "–")}</td><td>${esc(t.rufnummer)}</td><td class="money">${money(t.netto)}</td></tr>`).join("")}</tbody></table></div>
+            <tbody>${d.top_treiber.map((t) => `<tr class="linie-open" data-goto-ruf="${esc(t.rufnummer)}" title="Monitoring öffnen"><td>${esc(t.nutzer || "–")}</td><td>${esc(t.rufnummer)}</td><td class="money">${money(t.netto)}</td></tr>`).join("")}</tbody></table></div>
         </div>
       </div>
     </div>`;
@@ -747,6 +759,108 @@ function drawCtrlChart(id, type, labels, data) {
       scales: { x: { ticks: { font: { size: 10 }, maxRotation: 55 } }, y: { beginAtZero: true, ticks: { callback: (v) => v.toLocaleString("de-DE") } } },
     },
   });
+}
+
+// ---- Linien-Monitoring (Rufnummer über Monate) ----------------------------
+function gotoLinie(ruf) { if (ruf) location.hash = "#/linie/" + encodeURIComponent(ruf); }
+function closeLinie() { location.hash = state.baseHash || "#/vertraege"; }
+function hideLinie() {
+  state.linieRuf = null;
+  document.getElementById("liniePanel").hidden = true;
+  document.getElementById("linieOverlay").hidden = true;
+}
+async function openLinie(ruf) {
+  const panel = document.getElementById("liniePanel");
+  if (state.linieRuf === ruf && !panel.hidden) return;
+  state.linieRuf = ruf;
+  panel.innerHTML = '<div class="drawer-head"><h3>Linie</h3><button class="btn" id="linieClose">✕</button></div><div class="hint">lade …</div>';
+  panel.hidden = false;
+  document.getElementById("linieOverlay").hidden = false;
+  let d;
+  try { d = await api("/api/linie/" + encodeURIComponent(ruf)); }
+  catch (e) {
+    panel.innerHTML = `<div class="drawer-head"><h3>${esc(ruf)}</h3><button class="btn" id="linieClose">✕</button></div><div class="empty">Keine Daten zu dieser Rufnummer.</div>`;
+    return;
+  }
+  if (state.linieRuf !== ruf) return; // Antwort veraltet (andere Linie geöffnet)
+  renderLinie(d);
+}
+const ALARM_TXT = { overage: "Overage", kostensprung: "Kosten", rabatt_weg: "Rabatt", option_neu: "Option +", option_weg: "Option −" };
+function fmtVal(val, unit) {
+  const n = Number(val).toLocaleString("de-DE", unit === "€" ? { minimumFractionDigits: 2, maximumFractionDigits: 2 } : {});
+  return n + " " + unit;
+}
+function drawSeries(id, type, labels, data, unit) {
+  if (charts[id]) charts[id].destroy();
+  const ctx = document.getElementById(id); if (!ctx) return;
+  charts[id] = new Chart(ctx, {
+    type,
+    data: { labels, datasets: [{ data, backgroundColor: DATA_COLOR, borderColor: DATA_COLOR, borderRadius: 5, tension: .25, fill: false }] },
+    options: {
+      responsive: true, maintainAspectRatio: false, animation: false,
+      plugins: { legend: { display: false }, tooltip: { callbacks: { label: (c) => fmtVal(c.parsed.y ?? c.parsed, unit) } } },
+      scales: { x: { ticks: { font: { size: 10 } } }, y: { beginAtZero: true, ticks: { callback: (val) => fmtVal(val, unit) } } },
+    },
+  });
+}
+function renderLinie(d) {
+  const panel = document.getElementById("liniePanel");
+  const sd = d.stammdaten || {};
+  const v = d.verlauf || [];
+  const cur = v[v.length - 1], prev = v[v.length - 2];
+  const dNet = (cur && prev) ? cur.netto - prev.netto : null;
+  const dPct = (dNet != null && prev.netto) ? dNet / prev.netto * 100 : null;
+  const rv = sd.rahmenvertrag ? ` · ${esc(sd.rahmenvertrag)}` : "";
+  let vvlBadge = "";
+  if (sd.bindefristende) {
+    const days = Math.round((new Date(sd.bindefristende) - Date.now()) / 86400000);
+    if (days < 0) vvlBadge = `<span class="vvl-badge red">Bindefrist abgelaufen</span>`;
+    else if (days <= 90) vvlBadge = `<span class="vvl-badge red">VVL in ${days} T</span>`;
+    else vvlBadge = `<span class="vvl-badge ok">Bindefrist bis ${fmtDate(sd.bindefristende)}</span>`;
+  }
+  const kpis = [
+    ["Netto akt. Monat", cur ? money(cur.netto) : "–", dNet != null ? deltaBadge(dNet, dPct) : ""],
+    ["Verbrauch akt.", cur && cur.data_used_gb != null ? `${cur.data_used_gb.toLocaleString("de-DE")} GB` : "–", ""],
+    ["Datenvolumen", cur && cur.data_contracted_gb ? `${cur.data_contracted_gb} GB` : "unbegrenzt", ""],
+    ["Monate erfasst", String(v.length), ""],
+  ];
+  const splitRow = (lbl, val, cls = "") => val ? `<div class="krow ${cls}"><span>${lbl}</span><b>${money(val)}</b></div>` : "";
+  const split = cur
+    ? splitRow("Grundpreis", cur.grundpreis) + splitRow("Optionen", cur.optionen) + splitRow("Verbrauch", cur.verbrauch)
+      + splitRow("Rabatt", cur.rabatt, "rabatt") + `<div class="krow total"><span>Netto</span><b>${money(cur.netto)}</b></div>`
+    : '<div class="hint">keine Rechnungsdaten für diese Rufnummer</div>';
+  const alarms = (d.auffaelligkeiten || []).slice().reverse();
+  const alarmHtml = alarms.length
+    ? alarms.map((a) => `<div class="alarm"><span class="tag ${a.typ === "option_neu" || a.typ === "option_weg" ? "info" : "warn"}">${ALARM_TXT[a.typ] || a.typ}</span><span>${esc(a.text)}</span><span class="per">${fmtDate(a.period)}</span></div>`).join("")
+    : '<div class="hint">keine Auffälligkeiten</div>';
+  const rows = v.slice().reverse().map((m) =>
+    `<tr><td>${fmtDate(m.period)}</td><td>${m.data_used_gb != null ? m.data_used_gb.toLocaleString("de-DE") + " GB" : "–"}</td><td>${m.auslastung_pct != null ? m.auslastung_pct + "%" : "–"}</td><td>${money(m.netto)}</td></tr>`).join("");
+  const factRow = (f) => sd[f] ? `<div class="dl"><span>${esc((state.fields || {})[f] || f)}</span><b>${esc(sd[f])}</b></div>` : "";
+  const facts = ["tarif", "vertragsstatus", "kartentyp", "vertragsbeginn", "bindefristende", "vvl_berechtigung", "daten_optionen", "voice_optionen", "roaming_optionen"].map(factRow).join("");
+  const key = sd.rufnummer ? noteKey(sd) : null;
+  state.linieNoteKey = key;
+  const note = key ? (state.notes[key] || "") : "";
+
+  panel.innerHTML = `
+    <div class="drawer-head">
+      <div><div class="muted">Rufnummer${rv}</div><h3>${esc(d.rufnummer)}</h3>
+        <div class="muted">${esc(sd.kostenstellennutzer || "–")} · ${esc(sd.tarif || "–")} ${vvlBadge}</div></div>
+      <div class="drawer-actions"><button class="btn" id="linieClose">✕</button></div>
+    </div>
+    <div class="linie-kpis">${kpis.map(([l, val, dd]) => `<div class="linie-kpi"><div class="num">${val}</div><div class="lbl">${l}${dd ? " · " + dd : ""}</div></div>`).join("")}</div>
+    <div class="dg"><h4>Verbrauch pro Monat</h4>${v.length ? '<div class="linie-chart"><canvas id="linieGb"></canvas></div>' : '<div class="hint">keine Rechnungsmonate</div>'}</div>
+    <div class="dg"><h4>Kosten pro Monat</h4>${v.length ? '<div class="linie-chart"><canvas id="linieNet"></canvas></div>' : '<div class="hint">keine Rechnungsmonate</div>'}</div>
+    <div class="dg"><h4>Auffälligkeiten <span class="muted">(Monat zu Monat)</span></h4>${alarmHtml}</div>
+    <div class="dg"><h4>Kostensplit aktueller Monat</h4>${split}</div>
+    ${rows ? `<div class="dg"><h4>Monatswerte</h4><table class="mtab"><thead><tr><th>Monat</th><th>Verbrauch</th><th>Ausl.</th><th>Netto</th></tr></thead><tbody>${rows}</tbody></table></div>` : ""}
+    <div class="dg"><h4>Vertrag</h4>${facts || '<div class="hint">keine Stammdaten (Rufnummer nicht im aktuellen Report)</div>'}</div>
+    ${key ? `<div class="dg note-block"><h4>Notiz / geprüft</h4><textarea id="linieNote" placeholder="z. B. geprüft am …, VVL angefragt">${esc(note)}</textarea><button class="btn" id="linieNoteSave">Notiz speichern</button></div>` : ""}`;
+
+  if (v.length) {
+    const labels = v.map((m) => fmtDate(m.period));
+    drawSeries("linieGb", "bar", labels, v.map((m) => m.data_used_gb || 0), "GB");
+    drawSeries("linieNet", "line", labels, v.map((m) => moneyNum(m.netto)), "€");
+  }
 }
 
 // ---- events ---------------------------------------------------------------
@@ -838,6 +952,7 @@ document.getElementById("grid").addEventListener("click", (e) => {
 
 document.getElementById("drawer").addEventListener("click", async (e) => {
   if (e.target.id === "drawerClose") return closeDrawer();
+  if (e.target.id === "drawerVerlauf") { closeDrawer(); return gotoLinie(state.drawerRuf); }
   if (e.target.id === "drawerPrint") return window.print();
   if (e.target.id === "noteSave") {
     const key = state.drawerKey;
@@ -852,5 +967,34 @@ document.getElementById("drawer").addEventListener("click", async (e) => {
 });
 document.getElementById("drawerOverlay").addEventListener("click", closeDrawer);
 document.getElementById("csvBtn").addEventListener("click", exportCsv);
+
+// Linien-Panel: schließen + Notiz speichern
+document.getElementById("liniePanel").addEventListener("click", async (e) => {
+  if (e.target.id === "linieClose") return closeLinie();
+  if (e.target.id === "linieNoteSave") {
+    const key = state.linieNoteKey;
+    if (!key) return;
+    const val = document.getElementById("linieNote").value;
+    try {
+      await api("/api/notes", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ key, note: val }) });
+      if (val && val.trim()) state.notes[key] = val.trim(); else delete state.notes[key];
+      toast("Notiz gespeichert");
+    } catch (err) { toast("Speichern fehlgeschlagen: " + err.message, true); }
+  }
+});
+document.getElementById("linieOverlay").addEventListener("click", closeLinie);
+// Rufnummer aus Controlling-Listen -> Monitoring öffnen
+document.getElementById("view-controlling").addEventListener("click", (e) => {
+  const el = e.target.closest("[data-goto-ruf]");
+  if (el) gotoLinie(el.dataset.gotoRuf);
+});
+// Enter in der Suche: eindeutige Rufnummer -> direkt Monitoring öffnen
+document.getElementById("search").addEventListener("keydown", (e) => {
+  if (e.key !== "Enter") return;
+  const q = (state.search || "").replace(/\D/g, "");
+  if (!q) return;
+  const hits = (state.all || []).filter((c) => String(c.rufnummer || "").replace(/\D/g, "").includes(q));
+  if (hits.length === 1) gotoLinie(hits[0].rufnummer);
+});
 
 init();

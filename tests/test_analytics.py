@@ -357,3 +357,81 @@ def test_fleet_freshness_env_fenster_wird_respektiert():
     fleet = [_r("RV", "A", "2026-07-28", 1)]  # 7 Tage
     assert analytics.fleet_freshness(fleet, FRESH_TODAY, max_age_days=14)["stale"] is False
     assert analytics.fleet_freshness(fleet, FRESH_TODAY, max_age_days=5)["stale"] is True
+
+
+# ---- Rufnummer-Monitoring (Verlauf über Monate) -------------------------
+def _iline(period, ruf, cat, amount, item="", cg=None, ug=None):
+    """Rechnungszeile mit Perioden-Meta (wie store.all_invoice_lines liefert)."""
+    return {"_period_start": period, "rufnummer": ruf, "category": cat,
+            "item_name": item, "amount": amount,
+            "data_contracted_gb": cg, "data_used_gb": ug}
+
+
+def test_linie_verlauf_gruppiert_je_monat_und_filtert_rufnummer():
+    lines = [
+        # Mai — Ziel-Rufnummer (verschiedene Schreibweisen matchen via normalize)
+        _iline("2026-05-01", "+49-151-1", "grundpreis", 54.90, "Business Mobil L"),
+        _iline("2026-05-01", "+49-151-1", "rabatt", -5.49, "10% auf Grundpreis"),
+        _iline("2026-05-01", "+49-151-1", "option", 7.60, "DataPlus 12 GB"),
+        _iline("2026-05-01", "+49-151-1", "info", 0.0, "Datenvolumen", cg=50.0, ug=5.0),
+        # Juni — gleiche Linie, andere Schreibweise
+        _iline("2026-06-01", "0151 1", "grundpreis", 54.90, "Business Mobil L"),
+        _iline("2026-06-01", "0151 1", "info", 0.0, "Datenvolumen", cg=50.0, ug=25.0),
+        # Fremde Linie (muss rausgefiltert werden)
+        _iline("2026-06-01", "0170 999", "grundpreis", 50.0, "Flat S"),
+    ]
+    v = analytics.linie_verlauf(lines, "0151-1")
+    assert [m["period"] for m in v] == ["2026-05-01", "2026-06-01"]  # chronologisch
+    m0 = v[0]
+    assert m0["netto"] == round(54.90 - 5.49 + 7.60, 2)
+    assert m0["grundpreis"] == 54.90 and m0["optionen"] == 7.60 and m0["rabatt"] == -5.49
+    assert m0["data_contracted_gb"] == 50.0 and m0["data_used_gb"] == 5.0
+    assert m0["auslastung_pct"] == 10.0
+    assert "DataPlus 12 GB" in m0["optionen_namen"]
+    assert v[1]["auslastung_pct"] == 50.0
+
+
+def test_linie_verlauf_leer_wenn_rufnummer_fehlt():
+    lines = [_iline("2026-06-01", "0170 999", "grundpreis", 50.0, "Flat S")]
+    assert analytics.linie_verlauf(lines, "0151-1") == []
+
+
+def _m(period, netto, rabatt=0.0, pct=None, opt=None):
+    return {"period": period, "netto": netto, "grundpreis": netto, "optionen": 0.0,
+            "rabatt": rabatt, "auslastung_pct": pct, "optionen_namen": opt or []}
+
+
+def test_auffaelligkeiten_kostensprung():
+    verlauf = [_m("2026-05-01", 60.0), _m("2026-06-01", 95.0)]  # +35 = 58%
+    a = analytics.linie_auffaelligkeiten(verlauf)
+    ks = [x for x in a if x["typ"] == "kostensprung"]
+    assert len(ks) == 1 and ks[0]["period"] == "2026-06-01" and ks[0]["delta_eur"] == 35.0
+
+
+def test_auffaelligkeiten_kleiner_sprung_ignoriert():
+    verlauf = [_m("2026-05-01", 60.0), _m("2026-06-01", 66.0)]  # +6 < 10 EUR
+    assert [x for x in analytics.linie_auffaelligkeiten(verlauf) if x["typ"] == "kostensprung"] == []
+
+
+def test_auffaelligkeiten_rabatt_verloren():
+    verlauf = [_m("2026-05-01", 60.0, rabatt=-6.0), _m("2026-06-01", 85.0, rabatt=0.0)]
+    typen = {x["typ"] for x in analytics.linie_auffaelligkeiten(verlauf)}
+    assert "rabatt_weg" in typen
+
+
+def test_auffaelligkeiten_overage_je_monat():
+    verlauf = [_m("2026-05-01", 60.0, pct=120.0)]
+    ov = [x for x in analytics.linie_auffaelligkeiten(verlauf) if x["typ"] == "overage"]
+    assert len(ov) == 1 and ov[0]["period"] == "2026-05-01"
+
+
+def test_auffaelligkeiten_option_hinzu_und_weg():
+    verlauf = [_m("2026-05-01", 60.0, opt=["DataPlus 12 GB"]),
+               _m("2026-06-01", 90.0, opt=["Travel Mobil"])]
+    typen = {(x["typ"], x.get("text")) for x in analytics.linie_auffaelligkeiten(verlauf)}
+    assert any(t == "option_neu" and "Travel Mobil" in (txt or "") for t, txt in typen)
+    assert any(t == "option_weg" and "DataPlus 12 GB" in (txt or "") for t, txt in typen)
+
+
+def test_auffaelligkeiten_leer_bei_einem_ruhigen_monat():
+    assert analytics.linie_auffaelligkeiten([_m("2026-06-01", 60.0, rabatt=-6.0, pct=40.0)]) == []

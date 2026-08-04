@@ -270,6 +270,28 @@ def test_costs_kostenstellen_je_invoice(client):
     assert r.status_code == 200 and len(r.json()) >= 1
 
 
+def test_linie_monitoring_verlauf_und_stammdaten(client):
+    _upload(client, rows=3)
+    ruf = client.get("/api/current").json()["contracts"][0]["rufnummer"]
+    _upload_invoice(client, rufnummern=[ruf], invoice_number="1", period=("2026-05-01", "2026-05-31"))
+    _upload_invoice(client, rufnummern=[ruf], invoice_number="2", period=("2026-06-01", "2026-06-30"))
+    body = client.get(f"/api/linie/{ruf}").json()
+    assert len(body["verlauf"]) == 2                      # zwei Monate
+    assert body["verlauf"][0]["period"] <= body["verlauf"][1]["period"]
+    assert body["stammdaten"] is not None                 # Report-Stammdaten gejoint
+    assert "auffaelligkeiten" in body
+
+
+def test_linie_monitoring_unbekannt_404(client):
+    assert client.get("/api/linie/0000000000").status_code == 404
+
+
+def test_linie_braucht_login(app_store):
+    app, _ = app_store
+    TestClient(app).post("/api/auth/setup", json={"password": PW})
+    assert TestClient(app).get("/api/linie/0151").status_code == 401
+
+
 def test_csv_upload_und_auslastung_pro_vertrag(client):
     _upload(client, rows=3)
     ruf = client.get("/api/current").json()["contracts"][0]["rufnummer"]
