@@ -20,13 +20,12 @@ def app_store(tmp_path, monkeypatch):
 
 
 @pytest.fixture
-def client(app_store, make_report, make_invoice, make_invoice_csv):
+def client(app_store, make_report, make_invoice_csv):
     """Authentifizierter Client (Passwort gesetzt + eingeloggt)."""
     app, s = app_store
     c = TestClient(app)
     c.post("/api/auth/setup", json={"password": PW})
     c._make_report = make_report
-    c._make_invoice = make_invoice
     c._make_invoice_csv = make_invoice_csv
     return c
 
@@ -35,10 +34,10 @@ def _upload_invoice(client, rufnummern=None, n=3, invoice_number="230000000001",
     kw = {"rufnummern": rufnummern, "n": n, "invoice_number": invoice_number}
     if period:
         kw["period"] = period
-    path = client._make_invoice(**kw)
+    path = client._make_invoice_csv(**kw)
     with open(path, "rb") as f:
         return client.post("/api/invoices",
-                           files={"file": (path.name, f.read(), "application/xml")})
+                           files={"file": (path.name, f.read(), "text/csv")})
 
 
 def _upload(client, rows=10, seed=0, name=None):
@@ -207,9 +206,12 @@ def test_invoice_upload(client):
     assert r.json()["line_count"] > 0
 
 
-def test_invoice_upload_non_xml_abgelehnt(client):
-    r = client.post("/api/invoices", files={"file": ("x.txt", b"hallo", "text/plain")})
-    assert r.status_code == 400
+def test_invoice_upload_nur_csv(client):
+    # weder .txt noch .xml werden akzeptiert - nur Telekom-CSV
+    assert client.post("/api/invoices",
+                       files={"file": ("x.txt", b"hallo", "text/plain")}).status_code == 400
+    assert client.post("/api/invoices",
+                       files={"file": ("x.xml", b"<Invoice/>", "application/xml")}).status_code == 400
 
 
 def test_invoices_liste(client):
