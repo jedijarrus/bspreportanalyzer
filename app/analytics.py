@@ -395,25 +395,17 @@ def zuordnungsluecken(lines: list[dict], fleet: list[dict]) -> dict:
     }
 
 
-def top_nutzer_gesamt(lines: list[dict], nutzer_map: dict, n: int = 12) -> list[dict]:
-    """Top-Kostentreiber über ALLE Rechnungen, je Kostenstellennutzer summiert.
+def top_rufnummer_gesamt(lines: list[dict], nutzer_map: dict, n: int = 12) -> list[dict]:
+    """Top-Kostentreiber über ALLE Rechnungen — **je Rufnummer** (unique).
 
-    Netto wird je Rufnummer über alle Rechnungen summiert; der Nutzer kommt aus
-    `nutzer_map` (normalisierte Rufnummer → Nutzer, aus dem Report/der Flotte — die
-    Rechnungszeile trägt ihn oft nicht). Ohne bekannten Nutzer dient die Rufnummer
-    als Fallback-Label. Repräsentative Rufnummer = teuerste des Nutzers (Klick →
-    Monitoring).
+    Netto je Rufnummer über alle Rechnungen summiert, absteigend. Der Nutzer wird
+    nur angezeigt (aus `nutzer_map`: normalisierte Rufnummer → Nutzer, aus dem
+    Report). Bewusst NICHT nach Nutzer gruppiert — Pools haben mehrere Rufnummern
+    unter gleichem/leerem Nutzer, die sonst falsch zusammengefasst würden.
     """
-    agg: dict[str, float] = {}
-    best: dict[str, tuple[str, float]] = {}
-    for ruf, v in kosten_je_rufnummer(lines).items():
-        nutzer = nutzer_map.get(normalize_rufnummer(ruf)) or ruf
-        netto = v["netto"]
-        agg[nutzer] = agg.get(nutzer, 0.0) + netto
-        if nutzer not in best or netto > best[nutzer][1]:
-            best[nutzer] = (ruf, netto)
-    rows = [{"nutzer": nutzer, "netto": round(x, 2), "rufnummer": best[nutzer][0]}
-            for nutzer, x in agg.items()]
+    rows = [{"rufnummer": ruf, "netto": round(v["netto"], 2),
+             "nutzer": nutzer_map.get(normalize_rufnummer(ruf))}
+            for ruf, v in kosten_je_rufnummer(lines).items()]
     rows.sort(key=lambda r: -r["netto"])
     return rows[:n]
 

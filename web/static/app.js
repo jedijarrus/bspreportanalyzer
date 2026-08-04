@@ -754,9 +754,9 @@ async function renderControlling() {
             <tbody>${d.top_treiber.map((t) => `<tr class="linie-open" data-goto-ruf="${esc(t.rufnummer)}" title="Monitoring öffnen"><td>${esc(t.nutzer || "–")}</td><td>${esc(t.rufnummer)}</td><td class="money">${money(t.netto)}</td></tr>`).join("")}</tbody></table></div>
         </div>
         <div>
-          <div class="section-title">Top-Kostentreiber gesamt <span class="muted">(alle Rechnungen · je Nutzer · Zeile klicken = Monitoring)</span></div>
-          <div class="table-wrap"><table class="grid-table"><thead><tr><th>Mitarbeiter</th><th class="money">Netto gesamt</th></tr></thead>
-            <tbody>${(d.top_nutzer_gesamt || []).map((t) => `<tr class="linie-open" data-goto-ruf="${esc(t.rufnummer || "")}" title="Monitoring öffnen"><td>${esc(t.nutzer || "–")}</td><td class="money">${money(t.netto)}</td></tr>`).join("")}</tbody></table></div>
+          <div class="section-title">Top-Kostentreiber gesamt <span class="muted">(alle Rechnungen · je Rufnummer · Zeile klicken = Monitoring)</span></div>
+          <div class="table-wrap"><table class="grid-table"><thead><tr><th>Mitarbeiter</th><th>Rufnummer</th><th class="money">Netto gesamt</th></tr></thead>
+            <tbody>${(d.top_gesamt || []).map((t) => `<tr class="linie-open" data-goto-ruf="${esc(t.rufnummer || "")}" title="Monitoring öffnen"><td>${esc(t.nutzer || "–")}</td><td>${esc(t.rufnummer)}</td><td class="money">${money(t.netto)}</td></tr>`).join("")}</tbody></table></div>
         </div>
       </div>
 
