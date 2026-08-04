@@ -916,14 +916,24 @@ document.getElementById("logoutBtn").addEventListener("click", async () => {
 document.getElementById("search").addEventListener("input", (e) => { state.search = e.target.value.trim(); if (state.route === "vertraege") render(); });
 
 document.getElementById("fileInput").addEventListener("change", async (e) => {
-  const file = e.target.files[0]; if (!file) return;
-  const isInvoice = /\.csv$/i.test(file.name);
-  const fd = new FormData(); fd.append("file", file);
-  try {
-    const r = await api(isInvoice ? "/api/invoices" : "/api/reports", { method: "POST", body: fd });
-    toast(isInvoice ? `Rechnung: ${r.line_count} Positionen` : `Report: ${r.row_count} Verträge`);
-    await loadData();
-  } catch (err) { toast("Upload fehlgeschlagen: " + err.message, true); }
+  const files = Array.from(e.target.files || []);
+  if (!files.length) return;
+  let rep = 0, inv = 0, dup = 0, err = 0;
+  for (const file of files) {                      // mehrere Dateien nacheinander
+    const isInvoice = /\.csv$/i.test(file.name);
+    const fd = new FormData(); fd.append("file", file);
+    try {
+      const r = await api(isInvoice ? "/api/invoices" : "/api/reports", { method: "POST", body: fd });
+      if (isInvoice) { if (r.duplicate) dup++; else inv++; } else rep++;
+    } catch (_) { err++; }
+  }
+  const parts = [];
+  if (rep) parts.push(`${rep} Report${rep > 1 ? "s" : ""}`);
+  if (inv) parts.push(`${inv} Rechnung${inv > 1 ? "en" : ""} geladen`);
+  if (dup) parts.push(`${dup} Duplikat${dup > 1 ? "e" : ""} übersprungen`);
+  if (err) parts.push(`${err} Fehler`);
+  toast(parts.length ? parts.join(" · ") : "Nichts geladen", err > 0 && !rep && !inv);
+  await loadData();
   e.target.value = "";
 });
 

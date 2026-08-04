@@ -223,9 +223,13 @@ def create_app(secret_key: str | None = None) -> FastAPI:
         except Exception:
             dest.unlink(missing_ok=True)
             raise HTTPException(400, "Rechnung konnte nicht gelesen werden (ungültige CSV?).")
+        existing = db.find_invoice(data.invoice_number)
+        if existing:  # Dedup: gleiche Rechnungsnummer schon importiert -> nicht doppelt speichern
+            return {"invoice_id": existing["id"], "duplicate": True,
+                    "line_count": 0, "filename": data.filename}
         invoice_id = db.add_invoice(data)
-        return {"invoice_id": invoice_id, "line_count": len(data.lines),
-                "filename": data.filename}
+        return {"invoice_id": invoice_id, "duplicate": False,
+                "line_count": len(data.lines), "filename": data.filename}
 
     @app.get("/api/invoices", dependencies=[Depends(require_auth)])
     def list_invoices(db: Store = Depends(get_store)):
