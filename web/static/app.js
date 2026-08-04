@@ -723,9 +723,10 @@ async function renderControlling() {
   const zl = d.zuordnungsluecken || { geister: [], ohne_rechnung: [] };
   const chip = (r) => `<span class="chip linie-open" data-goto-ruf="${esc(r)}">${esc(r)}</span>`;
   const zlHtml = (zl.geister.length || zl.ohne_rechnung.length)
-    ? `<div class="zl-block"><div class="zl-lbl warn">Geister-SIM · Rechnung ohne Vertrag · ${zl.geister.length}</div><div class="badge-row">${zl.geister.slice(0, 40).map(chip).join(" ") || '<span class="muted">keine</span>'}</div></div>
+    ? `<div class="hint" style="margin-bottom:10px">Kann normal sein — z. B. Anschluss nach dem Report dazugekommen/gekündigt oder kein passender (älterer) Report vorhanden.</div>
+       <div class="zl-block"><div class="zl-lbl">Rechnung ohne Vertrag im aktuellen Report · ${zl.geister.length}</div><div class="badge-row">${zl.geister.slice(0, 40).map(chip).join(" ") || '<span class="muted">keine</span>'}</div></div>
        <div class="zl-block"><div class="zl-lbl">Vertrag ohne Rechnungsposition · ${zl.ohne_rechnung.length}</div><div class="badge-row">${zl.ohne_rechnung.slice(0, 40).map(chip).join(" ") || '<span class="muted">keine</span>'}</div></div>`
-    : '<div class="hint">keine Zuordnungslücken — Rechnung und Flotte passen zusammen</div>';
+    : '<div class="hint">keine Zuordnungslücken — Rechnung und Report passen zusammen</div>';
 
   pane.innerHTML = `
     <div class="page">
@@ -758,7 +759,7 @@ async function renderControlling() {
         </div>
       </div>
 
-      <div class="section-title">Zuordnungslücken <span class="muted">(Prüfung Rechnung ↔ Flotte · klicken = Monitoring)</span></div>
+      <div class="section-title">Zuordnung Rechnung ↔ Report <span class="muted">(klicken = Monitoring)</span></div>
       ${zlHtml}
     </div>`;
   const gbClick = (i) => gb[i] && selectCtrlByPeriod(gb[i].period);
