@@ -692,6 +692,7 @@ async function renderControlling() {
   }
   const sel = invoices.find((i) => i.id === state.ctrlInvoiceId) || invoices[invoices.length - 1];
   state.ctrlInvoiceId = sel.id;
+  state.ctrlPeriod = sel.period_start;   // gewählter Monat -> Default beim Öffnen einer Linie
   const selIdx = invoices.indexOf(sel);
   const monthSel = `<span class="month-nav"><button class="btn btn-xs" id="ctrlPrev"${selIdx <= 0 ? " disabled" : ""}>‹</button><select id="ctrlMonth">${invoices.map((i) => `<option value="${i.id}"${i.id === sel.id ? " selected" : ""}>${fmtDate(i.period_start)}</option>`).join("")}</select><button class="btn btn-xs" id="ctrlNext"${selIdx >= invoices.length - 1 ? " disabled" : ""}>›</button></span>`;
   const [d, trend] = await Promise.all([
@@ -886,7 +887,11 @@ function renderLinie(d) {
     ["Monate erfasst", String(v.length), ""],
   ];
   state.linieVerlauf = v;
-  state.linieMonth = cur ? cur.period : null;   // Kostensplit zeigt zuerst neuesten Monat
+  // Startmonat = der auf Controlling gewählte (falls für diese Linie vorhanden), sonst neuester
+  state.linieMonth = (state.ctrlPeriod && v.some((m) => m.period === state.ctrlPeriod))
+    ? state.ctrlPeriod
+    : (cur ? cur.period : null);
+  const curMonth = v.find((m) => m.period === state.linieMonth) || cur;
   const alarms = (d.auffaelligkeiten || []).slice().reverse();
   const alarmHtml = alarms.length
     ? alarms.map((a) => `<div class="alarm"><span class="tag ${a.typ === "option_neu" || a.typ === "option_weg" ? "info" : "warn"}">${ALARM_TXT[a.typ] || a.typ}</span><span>${esc(a.text)}</span><span class="per">${fmtDate(a.period)}</span></div>`).join("")
@@ -909,7 +914,7 @@ function renderLinie(d) {
     <div class="dg"><h4>Verbrauch pro Monat</h4>${v.length ? '<div class="linie-chart"><canvas id="linieGb"></canvas></div>' : '<div class="hint">keine Rechnungsmonate</div>'}</div>
     <div class="dg"><h4>Kosten pro Monat</h4>${v.length ? '<div class="linie-chart"><canvas id="linieNet"></canvas></div>' : '<div class="hint">keine Rechnungsmonate</div>'}</div>
     <div class="dg"><h4>Auffälligkeiten <span class="muted">(Monat zu Monat)</span></h4>${alarmHtml}</div>
-    <div class="dg"><h4>Kostensplit <span class="muted" id="linieSplitMonth">${fmtDate(state.linieMonth)}</span></h4><div id="linieSplit">${linieSplitHtml(cur)}</div></div>
+    <div class="dg"><h4>Kostensplit <span class="muted" id="linieSplitMonth">${fmtDate(state.linieMonth)}</span></h4><div id="linieSplit">${linieSplitHtml(curMonth)}</div></div>
     ${rows ? `<div class="dg"><h4>Monatswerte <span class="muted">(Zeile/Diagrammpunkt klicken = Aufstellung des Monats)</span></h4><table class="mtab"><thead><tr><th>Monat</th><th>Verbrauch</th><th>Ausl.</th><th>Netto</th></tr></thead><tbody>${rows}</tbody></table></div>` : ""}
     <div class="dg"><h4>Vertrag</h4>${facts || '<div class="hint">keine Stammdaten (Rufnummer nicht im aktuellen Report)</div>'}</div>
     ${key ? `<div class="dg note-block"><h4>Notiz / geprüft</h4><textarea id="linieNote" placeholder="z. B. geprüft am …, VVL angefragt">${esc(note)}</textarea><button class="btn" id="linieNoteSave">Notiz speichern</button></div>` : ""}`;
