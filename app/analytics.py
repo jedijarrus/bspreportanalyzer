@@ -355,6 +355,46 @@ def kosten_trend(lines: list[dict]) -> list[dict]:
     return [{"period": p, "netto": v} for p, v in sorted(agg.items())]
 
 
+def fleet_gb_trend(lines: list[dict]) -> list[dict]:
+    """Verbrauchte GB der ganzen Flotte je Rechnungsperiode (absolute Menge).
+
+    Sinnvoll bei Unlimited-Tarifen, wo die Auslastung % (verbraucht/gebucht)
+    keinen Nenner mehr hat.
+    """
+    agg: dict[str, float] = {}
+    for l in lines:
+        u = l.get("data_used_gb")
+        if u is None:
+            continue
+        p = l.get("_period_start") or l.get("period_start") or ""
+        agg[p] = agg.get(p, 0.0) + u
+    return [{"period": p, "gb": round(v, 1)} for p, v in sorted(agg.items())]
+
+
+def zuordnungsluecken(lines: list[dict], fleet: list[dict]) -> dict:
+    """Lücken zwischen Rechnung und Flotte (Prüfung):
+    - `geister`: Rufnummer auf der Rechnung, aber kein aktiver Vertrag (Geister-SIM)
+    - `ohne_rechnung`: aktiver Vertrag ohne jede Rechnungsposition
+    Rückgabe in Original-Schreibweise (nicht normalisiert).
+    """
+    inv: dict[str, str] = {}
+    for l in lines:
+        r = l.get("rufnummer")
+        nk = normalize_rufnummer(r) if r else None
+        if nk:
+            inv.setdefault(nk, r)
+    flt: dict[str, str] = {}
+    for c in fleet:
+        r = c.get("rufnummer")
+        nk = normalize_rufnummer(r) if r else None
+        if nk:
+            flt.setdefault(nk, r)
+    return {
+        "geister": sorted(inv[k] for k in set(inv) - set(flt)),
+        "ohne_rechnung": sorted(flt[k] for k in set(flt) - set(inv)),
+    }
+
+
 # ---- Rufnummer-Monitoring (Verlauf über Monate) --------------------------
 def linie_verlauf(all_lines: list[dict], rufnummer: str) -> list[dict]:
     """Monatsreihe EINER Rufnummer über alle Rechnungen.
@@ -366,6 +406,9 @@ def linie_verlauf(all_lines: list[dict], rufnummer: str) -> list[dict]:
     """
     target = normalize_rufnummer(rufnummer)
     by_period: dict[str, dict] = {}
+    opt_by_period: dict[str, dict[str, float]] = {}
+    rab_by_period: dict[str, dict[str, float]] = {}
+    verb_by_period: dict[str, dict[str, float]] = {}
     for l in all_lines:
         if normalize_rufnummer(l.get("rufnummer")) != target:
             continue
@@ -373,7 +416,7 @@ def linie_verlauf(all_lines: list[dict], rufnummer: str) -> list[dict]:
         m = by_period.setdefault(p, {
             "period": p, "netto": 0.0, "grundpreis": 0.0, "optionen": 0.0,
             "rabatt": 0.0, "verbrauch": 0.0, "data_contracted_gb": None,
-            "data_used_gb": None, "optionen_namen": []})
+            "data_used_gb": None, "optionen_namen": [], "optionen_posten": []})
         amt = l.get("amount") or 0.0
         m["netto"] += amt
         cat = l.get("category")
@@ -384,10 +427,18 @@ def linie_verlauf(all_lines: list[dict], rufnummer: str) -> list[dict]:
             name = (l.get("item_name") or "").strip()
             if name and name not in m["optionen_namen"]:
                 m["optionen_namen"].append(name)
+            posten = opt_by_period.setdefault(p, {})
+            posten[name] = posten.get(name, 0.0) + amt
         elif cat == "rabatt":
             m["rabatt"] += amt
+            rname = (l.get("item_name") or "Rabatt").strip() or "Rabatt"
+            rp = rab_by_period.setdefault(p, {})
+            rp[rname] = rp.get(rname, 0.0) + amt
         elif cat == "verbrauch":
             m["verbrauch"] += amt
+            vname = (l.get("item_name") or "Verbrauch").strip() or "Verbrauch"
+            vp = verb_by_period.setdefault(p, {})
+            vp[vname] = vp.get(vname, 0.0) + amt
         cg, ug = l.get("data_contracted_gb"), l.get("data_used_gb")
         if cg is not None:
             m["data_contracted_gb"] = cg
@@ -400,6 +451,12 @@ def linie_verlauf(all_lines: list[dict], rufnummer: str) -> list[dict]:
             m[k] = round(m[k], 2)
         cg, ug = m["data_contracted_gb"], m["data_used_gb"]
         m["auslastung_pct"] = round(ug / cg * 100, 1) if cg else None
+        m["optionen_posten"] = [{"name": n, "amount": round(a, 2)}
+                                for n, a in opt_by_period.get(m["period"], {}).items()]
+        m["rabatte_posten"] = [{"name": n, "amount": round(a, 2)}
+                               for n, a in rab_by_period.get(m["period"], {}).items()]
+        m["verbrauch_posten"] = [{"name": n, "amount": round(a, 2)}
+                                 for n, a in verb_by_period.get(m["period"], {}).items()]
         out.append(m)
     out.sort(key=lambda x: x["period"])
     return out

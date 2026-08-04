@@ -396,6 +396,39 @@ def test_linie_verlauf_leer_wenn_rufnummer_fehlt():
     assert analytics.linie_verlauf(lines, "0151-1") == []
 
 
+def test_linie_verlauf_optionen_posten_mit_betrag():
+    lines = [
+        _iline("2026-06-01", "0151 1", "grundpreis", 69.71, "Business Mobil L"),
+        _iline("2026-06-01", "0151 1", "option", 16.76, "DataPlus 12 GB"),
+        _iline("2026-06-01", "0151 1", "option", 16.76, "Country Flat 1 Plus"),
+    ]
+    v = analytics.linie_verlauf(lines, "0151-1")
+    posten = {p["name"]: p["amount"] for p in v[0]["optionen_posten"]}
+    assert posten == {"DataPlus 12 GB": 16.76, "Country Flat 1 Plus": 16.76}
+
+
+def test_linie_verlauf_rabatte_posten_aufgeschluesselt():
+    lines = [
+        _iline("2026-06-01", "0151 1", "option", 16.76, "Country Flat 1 Plus"),
+        _iline("2026-06-01", "0151 1", "rabatt", -16.76, "100% auf Grundpreis Country Flat 1 Plus"),
+        _iline("2026-06-01", "0151 1", "rabatt", -19.99, "25% auf Grundpreis Business Mobil L"),
+    ]
+    v = analytics.linie_verlauf(lines, "0151-1")
+    posten = {p["name"]: p["amount"] for p in v[0]["rabatte_posten"]}
+    assert posten == {"100% auf Grundpreis Country Flat 1 Plus": -16.76,
+                      "25% auf Grundpreis Business Mobil L": -19.99}
+
+
+def test_linie_verlauf_verbrauch_posten_aufgeschluesselt():
+    lines = [
+        _iline("2026-06-01", "0151 1", "verbrauch", 2.50, "Verbindungen Ausland"),
+        _iline("2026-06-01", "0151 1", "verbrauch", 0.99, "SMS Ausland"),
+    ]
+    v = analytics.linie_verlauf(lines, "0151-1")
+    posten = {p["name"]: p["amount"] for p in v[0]["verbrauch_posten"]}
+    assert posten == {"Verbindungen Ausland": 2.5, "SMS Ausland": 0.99}
+
+
 def _m(period, netto, rabatt=0.0, pct=None, opt=None):
     return {"period": period, "netto": netto, "grundpreis": netto, "optionen": 0.0,
             "rabatt": rabatt, "auslastung_pct": pct, "optionen_namen": opt or []}
@@ -435,3 +468,24 @@ def test_auffaelligkeiten_option_hinzu_und_weg():
 
 def test_auffaelligkeiten_leer_bei_einem_ruhigen_monat():
     assert analytics.linie_auffaelligkeiten([_m("2026-06-01", 69.0, rabatt=-17.0, pct=40.0)]) == []
+
+
+# ---- Controlling-Cockpit (Flotten-GB/Monat, Zuordnungslücken) ------------
+def test_fleet_gb_trend_summiert_verbrauch_je_periode():
+    lines = [
+        {"_period_start": "2026-05-01", "data_used_gb": 8.0},
+        {"_period_start": "2026-05-01", "data_used_gb": 2.0},
+        {"_period_start": "2026-06-01", "data_used_gb": 40.0},
+        {"_period_start": "2026-06-01", "data_used_gb": None},  # ignoriert
+        {"_period_start": "2026-06-01"},                          # kein GB-Feld
+    ]
+    assert analytics.fleet_gb_trend(lines) == [
+        {"period": "2026-05-01", "gb": 10.0}, {"period": "2026-06-01", "gb": 40.0}]
+
+
+def test_zuordnungsluecken_geister_und_ohne_rechnung():
+    lines = [{"rufnummer": "+49-151-1"}, {"rufnummer": "0170 2"}]   # Rechnung: Linie 1 + 2
+    fleet = [{"rufnummer": "0151-1"}, {"rufnummer": "0180-9"}]      # Flotte: Linie 1 + 3
+    z = analytics.zuordnungsluecken(lines, fleet)
+    assert z["geister"] == ["0170 2"]           # auf Rechnung, kein Vertrag
+    assert z["ohne_rechnung"] == ["0180-9"]     # Vertrag, keine Rechnungsposition
