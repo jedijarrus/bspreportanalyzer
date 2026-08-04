@@ -504,7 +504,7 @@ function renderBase(name, param) {
   ["vertraege", "rechnungen", "controlling"].forEach((v) =>
     document.getElementById("view-" + v).hidden = v !== name);
   // Suche/Netto-Brutto nur in Verträgen relevant -> Suche ausblenden ausserhalb
-  document.querySelector(".topbar-mid").style.visibility = name === "vertraege" ? "visible" : "hidden";
+  document.querySelector(".topbar-mid").style.visibility = (name === "vertraege" || name === "controlling") ? "visible" : "hidden";
   if (name === "vertraege") renderVertraege();
   else if (name === "rechnungen") renderRechnungen(param);
   else if (name === "controlling") renderControlling();
@@ -695,53 +695,68 @@ async function renderControlling() {
   const inv = d.invoice, rec = d.reconcile, diff = d.diff;
   const dNet = diff ? diff.gesamt.delta : null;
   const dPct = diff && diff.gesamt.alt ? (dNet / diff.gesamt.alt) * 100 : null;
-  const rab = d.kategorie.find(([k]) => k === "rabatt");
-  const rabSum = rab ? Math.abs(rab[1]) : 0;
-  const rabQuote = (inv.total_net + rabSum) ? rabSum / (inv.total_net + rabSum) * 100 : 0;
   const nSim = rec.anzahl_rufnummern || 1;
+  const gb = d.gb_trend || [];
+  const gbLatest = gb.length ? gb[gb.length - 1].gb : null;
+  const gbPrev = gb.length > 1 ? gb[gb.length - 2].gb : null;
+  const dGb = (gbLatest != null && gbPrev != null) ? gbLatest - gbPrev : null;
   const kpis = [
     ["Netto Monat", money(inv.total_net), dNet != null ? deltaBadge(dNet, dPct) : ""],
     ["Ø je Vertrag", money(inv.total_net / nSim), ""],
-    ["Rabatt", `${money(rabSum)} · ${rabQuote.toFixed(0)}%`, ""],
+    ["Verträge", String(state.all.length), ""],
     ["Zuordnung", `${rec.anzahl_rufnummern} / ${state.all.length}`, ""],
-    ["Nicht zugeordnet", money(rec.nicht_zugeordnet), ""],
+    ["GB Flotte (Monat)", gbLatest != null ? gbLatest.toLocaleString("de-DE") + " GB" : "–",
+      dGb != null ? `<span class="delta">${dGb >= 0 ? "▲" : "▼"} ${Math.abs(dGb).toLocaleString("de-DE")} GB</span>` : ""],
   ];
   const rv = d.je_rahmenvertrag || [];
-  const au = d.datenauslastung;
+  const changes = ((diff && diff.je_rufnummer) || []).filter((r) => r.delta !== 0).slice(0, 12);
+  const changeBody = !diff
+    ? '<div class="hint">erste Rechnung — kein Vormonatsvergleich</div>'
+    : (changes.length
+        ? `<table class="grid-table"><thead><tr><th>Rufnummer</th><th class="money">Vormonat</th><th class="money">Aktuell</th><th class="money">Δ</th></tr></thead><tbody>${changes.map((r) => `<tr class="linie-open" data-goto-ruf="${esc(r.rufnummer)}" title="Monitoring öffnen"><td>${esc(r.rufnummer)}</td><td class="money">${money(r.alt)}</td><td class="money">${money(r.neu)}</td><td class="money">${deltaBadge(r.delta, r.alt ? r.delta / r.alt * 100 : null)}</td></tr>`).join("")}</tbody></table>`
+        : '<div class="hint">keine Kostenänderungen ggü. Vormonat</div>');
+  const zl = d.zuordnungsluecken || { geister: [], ohne_rechnung: [] };
+  const chip = (r) => `<span class="chip linie-open" data-goto-ruf="${esc(r)}">${esc(r)}</span>`;
+  const zlHtml = (zl.geister.length || zl.ohne_rechnung.length)
+    ? `<div class="zl-block"><div class="zl-lbl warn">Geister-SIM · Rechnung ohne Vertrag · ${zl.geister.length}</div><div class="badge-row">${zl.geister.slice(0, 40).map(chip).join(" ") || '<span class="muted">keine</span>'}</div></div>
+       <div class="zl-block"><div class="zl-lbl">Vertrag ohne Rechnungsposition · ${zl.ohne_rechnung.length}</div><div class="badge-row">${zl.ohne_rechnung.slice(0, 40).map(chip).join(" ") || '<span class="muted">keine</span>'}</div></div>`
+    : '<div class="hint">keine Zuordnungslücken — Rechnung und Flotte passen zusammen</div>';
+
   pane.innerHTML = `
     <div class="page">
       <h1 class="page-title">Controlling <span class="muted">· Rechnung ${fmtDate(inv.period_start)}</span></h1>
       <div class="kpis">${kpis.map(([l, v, dd]) => `<div class="card"><div class="num">${v}</div><div class="lbl">${l}${dd ? " · " + dd : ""}</div></div>`).join("")}</div>
-      <div class="section-title">Datenauslastung <span class="muted">(gebuchtes vs. verbrauchtes Volumen)</span></div>
-      <div class="kpis">
-        <div class="card"><div class="num">${au.auslastung_pct}%</div><div class="lbl">Gesamt-Auslastung</div></div>
-        <div class="card"><div class="num">${au.gebucht_gb.toLocaleString("de-DE")} GB</div><div class="lbl">gebucht</div></div>
-        <div class="card"><div class="num">${au.verbraucht_gb.toLocaleString("de-DE")} GB</div><div class="lbl">verbraucht</div></div>
-        <div class="card"><div class="num warn">${au.unter_25}</div><div class="lbl">Downgrade-Kandidaten (&lt; 25%)</div></div>
-        <div class="card"><div class="num">${au.ueber_100}</div><div class="lbl">Overage (&gt; 100%)</div></div>
+
+      <div class="section-title">Was hat sich geändert? <span class="muted">(Netto je Linie ggü. Vormonat · Zeile klicken = Monitoring)</span></div>
+      <div class="table-wrap" style="max-height:360px;overflow:auto">${changeBody}</div>
+
+      <div class="section-grid">
+        <div>
+          <div class="section-title">Datenverbrauch der Flotte <span class="muted">(GB je Monat)</span></div>
+          ${gb.length ? '<div class="chart-box" style="height:260px"><canvas id="ctrlGb"></canvas></div>' : '<div class="hint">Kein Datenverbrauch in den Rechnungen erfasst.</div>'}
+        </div>
+        <div>
+          <div class="section-title">Kosten pro Monat <span class="muted">(Netto je Rechnung)</span></div>
+          <div class="chart-box" style="height:260px"><canvas id="ctrlTrend"></canvas></div>
+        </div>
       </div>
-      <div class="section-title">Datentarife nach Auslastung <span class="muted">(schlechteste zuerst · anonym, nicht je Vertrag zuordenbar)</span></div>
-      <div class="table-wrap" style="max-height:340px;overflow:auto"><table class="grid-table">
-        <thead><tr><th class="money">gebucht</th><th class="money">verbraucht</th><th style="width:45%">Auslastung</th></tr></thead>
-        <tbody>${(d.auslastung_liste || []).map((r) => `<tr>
-          <td class="money">${r.gebucht_gb.toLocaleString("de-DE")} GB</td>
-          <td class="money">${r.verbraucht_gb.toLocaleString("de-DE")} GB</td>
-          <td><div class="row-meter"><div class="mini-meter"><div class="mini-fill ${r.pct < 40 ? "low" : r.pct < 80 ? "mid" : "high"}" style="width:${Math.min(100, r.pct)}%"></div></div><span class="mini-pct">${r.pct}%</span></div></td>
-        </tr>`).join("")}</tbody></table></div>
-      <div class="section-title">Kostentrend <span class="muted">(Netto je Rechnung)</span></div>
-      <div class="chart-box" style="height:280px"><canvas id="ctrlTrend"></canvas></div>
+
       <div class="section-grid">
         <div>
           <div class="section-title">Kosten je Rahmenvertrag</div>
           <div class="chart-box" style="height:260px"><canvas id="ctrlRv"></canvas></div>
         </div>
         <div>
-          <div class="section-title">Top-Kostentreiber <span class="muted">(je Vertrag / Mitarbeiter)</span></div>
+          <div class="section-title">Top-Kostentreiber <span class="muted">(Zeile klicken = Monitoring)</span></div>
           <div class="table-wrap"><table class="grid-table"><thead><tr><th>Mitarbeiter</th><th>Rufnummer</th><th class="money">Netto</th></tr></thead>
             <tbody>${d.top_treiber.map((t) => `<tr class="linie-open" data-goto-ruf="${esc(t.rufnummer)}" title="Monitoring öffnen"><td>${esc(t.nutzer || "–")}</td><td>${esc(t.rufnummer)}</td><td class="money">${money(t.netto)}</td></tr>`).join("")}</tbody></table></div>
         </div>
       </div>
+
+      <div class="section-title">Zuordnungslücken <span class="muted">(Prüfung Rechnung ↔ Flotte · klicken = Monitoring)</span></div>
+      ${zlHtml}
     </div>`;
+  if (gb.length) drawSeries("ctrlGb", "bar", gb.map((x) => fmtDate(x.period)), gb.map((x) => x.gb), "GB");
   drawCtrlChart("ctrlTrend", "line", trend.map((t) => fmtDate(t.period)), trend.map((t) => moneyNum(t.netto)));
   drawCtrlChart("ctrlRv", "bar", rv.map((x) => x.rahmenvertrag), rv.map((x) => moneyNum(x.netto)));
 }
@@ -790,7 +805,7 @@ function fmtVal(val, unit) {
   const n = Number(val).toLocaleString("de-DE", unit === "€" ? { minimumFractionDigits: 2, maximumFractionDigits: 2 } : {});
   return n + " " + unit;
 }
-function drawSeries(id, type, labels, data, unit) {
+function drawSeries(id, type, labels, data, unit, onPoint) {
   if (charts[id]) charts[id].destroy();
   const ctx = document.getElementById(id); if (!ctx) return;
   charts[id] = new Chart(ctx, {
@@ -798,10 +813,38 @@ function drawSeries(id, type, labels, data, unit) {
     data: { labels, datasets: [{ data, backgroundColor: DATA_COLOR, borderColor: DATA_COLOR, borderRadius: 5, tension: .25, fill: false }] },
     options: {
       responsive: true, maintainAspectRatio: false, animation: false,
+      onClick: onPoint ? (evt, els) => { if (els && els.length) onPoint(els[0].index); } : undefined,
       plugins: { legend: { display: false }, tooltip: { callbacks: { label: (c) => fmtVal(c.parsed.y ?? c.parsed, unit) } } },
       scales: { x: { ticks: { font: { size: 10 } } }, y: { beginAtZero: true, ticks: { callback: (val) => fmtVal(val, unit) } } },
     },
   });
+}
+// Kostensplit-HTML EINES Monats (Grundpreis -> Optionen einzeln -> Rabatt -> Netto)
+function linieSplitHtml(m) {
+  if (!m) return '<div class="hint">keine Rechnungsdaten für diese Rufnummer</div>';
+  const row = (lbl, val, cls = "") => val ? `<div class="krow ${cls}"><span>${lbl}</span><b>${money(val)}</b></div>` : "";
+  const items = (arr, icls = "") => (arr || []).map((o) => `<div class="krow opt ${icls}"><span>↳ ${esc(o.name)}</span><b>${money(o.amount)}</b></div>`).join("");
+  // Gruppenkopf (Summe) + Einzelposten; ohne Posten fällt es auf eine schlichte Summenzeile zurück
+  const group = (lbl, sum, arr, cls = "") => (arr && arr.length)
+    ? `<div class="krow grp ${cls}"><span>${lbl}</span><b>${money(sum)}</b></div>` + items(arr, cls)
+    : row(lbl, sum, cls);
+  return row("Grundpreis", m.grundpreis)
+    + group("Optionen", m.optionen, m.optionen_posten)
+    + group("Verbrauch", m.verbrauch, m.verbrauch_posten)
+    + group("Rabatte", m.rabatt, m.rabatte_posten, "rabatt")
+    + `<div class="krow total"><span>Netto</span><b>${money(m.netto)}</b></div>`;
+}
+// Monat wählen (Klick auf Monatszeile oder Diagrammpunkt) -> Split umschalten
+function selectLinieMonth(period) {
+  const m = (state.linieVerlauf || []).find((x) => x.period === period);
+  if (!m) return;
+  state.linieMonth = period;
+  const box = document.getElementById("linieSplit");
+  if (box) box.innerHTML = linieSplitHtml(m);
+  const lbl = document.getElementById("linieSplitMonth");
+  if (lbl) lbl.textContent = fmtDate(period);
+  document.querySelectorAll("#liniePanel [data-linie-month]").forEach((el) =>
+    el.classList.toggle("active", el.dataset.linieMonth === period));
 }
 function renderLinie(d) {
   const panel = document.getElementById("liniePanel");
@@ -824,17 +867,14 @@ function renderLinie(d) {
     ["Datenvolumen", cur && cur.data_contracted_gb ? `${cur.data_contracted_gb} GB` : "unbegrenzt", ""],
     ["Monate erfasst", String(v.length), ""],
   ];
-  const splitRow = (lbl, val, cls = "") => val ? `<div class="krow ${cls}"><span>${lbl}</span><b>${money(val)}</b></div>` : "";
-  const split = cur
-    ? splitRow("Grundpreis", cur.grundpreis) + splitRow("Optionen", cur.optionen) + splitRow("Verbrauch", cur.verbrauch)
-      + splitRow("Rabatt", cur.rabatt, "rabatt") + `<div class="krow total"><span>Netto</span><b>${money(cur.netto)}</b></div>`
-    : '<div class="hint">keine Rechnungsdaten für diese Rufnummer</div>';
+  state.linieVerlauf = v;
+  state.linieMonth = cur ? cur.period : null;   // Kostensplit zeigt zuerst neuesten Monat
   const alarms = (d.auffaelligkeiten || []).slice().reverse();
   const alarmHtml = alarms.length
     ? alarms.map((a) => `<div class="alarm"><span class="tag ${a.typ === "option_neu" || a.typ === "option_weg" ? "info" : "warn"}">${ALARM_TXT[a.typ] || a.typ}</span><span>${esc(a.text)}</span><span class="per">${fmtDate(a.period)}</span></div>`).join("")
     : '<div class="hint">keine Auffälligkeiten</div>';
   const rows = v.slice().reverse().map((m) =>
-    `<tr><td>${fmtDate(m.period)}</td><td>${m.data_used_gb != null ? m.data_used_gb.toLocaleString("de-DE") + " GB" : "–"}</td><td>${m.auslastung_pct != null ? m.auslastung_pct + "%" : "–"}</td><td>${money(m.netto)}</td></tr>`).join("");
+    `<tr class="linie-open${m.period === state.linieMonth ? " active" : ""}" data-linie-month="${m.period}" title="Aufstellung dieses Monats"><td>${fmtDate(m.period)}</td><td>${m.data_used_gb != null ? m.data_used_gb.toLocaleString("de-DE") + " GB" : "–"}</td><td>${m.auslastung_pct != null ? m.auslastung_pct + "%" : "–"}</td><td>${money(m.netto)}</td></tr>`).join("");
   const factRow = (f) => sd[f] ? `<div class="dl"><span>${esc((state.fields || {})[f] || f)}</span><b>${esc(sd[f])}</b></div>` : "";
   const facts = ["tarif", "vertragsstatus", "kartentyp", "vertragsbeginn", "bindefristende", "vvl_berechtigung", "daten_optionen", "voice_optionen", "roaming_optionen"].map(factRow).join("");
   const key = sd.rufnummer ? noteKey(sd) : null;
@@ -851,15 +891,16 @@ function renderLinie(d) {
     <div class="dg"><h4>Verbrauch pro Monat</h4>${v.length ? '<div class="linie-chart"><canvas id="linieGb"></canvas></div>' : '<div class="hint">keine Rechnungsmonate</div>'}</div>
     <div class="dg"><h4>Kosten pro Monat</h4>${v.length ? '<div class="linie-chart"><canvas id="linieNet"></canvas></div>' : '<div class="hint">keine Rechnungsmonate</div>'}</div>
     <div class="dg"><h4>Auffälligkeiten <span class="muted">(Monat zu Monat)</span></h4>${alarmHtml}</div>
-    <div class="dg"><h4>Kostensplit aktueller Monat</h4>${split}</div>
-    ${rows ? `<div class="dg"><h4>Monatswerte</h4><table class="mtab"><thead><tr><th>Monat</th><th>Verbrauch</th><th>Ausl.</th><th>Netto</th></tr></thead><tbody>${rows}</tbody></table></div>` : ""}
+    <div class="dg"><h4>Kostensplit <span class="muted" id="linieSplitMonth">${fmtDate(state.linieMonth)}</span></h4><div id="linieSplit">${linieSplitHtml(cur)}</div></div>
+    ${rows ? `<div class="dg"><h4>Monatswerte <span class="muted">(Zeile/Diagrammpunkt klicken = Aufstellung des Monats)</span></h4><table class="mtab"><thead><tr><th>Monat</th><th>Verbrauch</th><th>Ausl.</th><th>Netto</th></tr></thead><tbody>${rows}</tbody></table></div>` : ""}
     <div class="dg"><h4>Vertrag</h4>${facts || '<div class="hint">keine Stammdaten (Rufnummer nicht im aktuellen Report)</div>'}</div>
     ${key ? `<div class="dg note-block"><h4>Notiz / geprüft</h4><textarea id="linieNote" placeholder="z. B. geprüft am …, VVL angefragt">${esc(note)}</textarea><button class="btn" id="linieNoteSave">Notiz speichern</button></div>` : ""}`;
 
   if (v.length) {
     const labels = v.map((m) => fmtDate(m.period));
-    drawSeries("linieGb", "bar", labels, v.map((m) => m.data_used_gb || 0), "GB");
-    drawSeries("linieNet", "line", labels, v.map((m) => moneyNum(m.netto)), "€");
+    const onPoint = (i) => selectLinieMonth(v[i].period);
+    drawSeries("linieGb", "bar", labels, v.map((m) => m.data_used_gb || 0), "GB", onPoint);
+    drawSeries("linieNet", "line", labels, v.map((m) => moneyNum(m.netto)), "€", onPoint);
   }
 }
 
@@ -872,7 +913,7 @@ document.getElementById("logoutBtn").addEventListener("click", async () => {
   state.all = []; state.filters = {}; showAuth("login");
 });
 
-document.getElementById("search").addEventListener("input", (e) => { state.search = e.target.value.trim(); render(); });
+document.getElementById("search").addEventListener("input", (e) => { state.search = e.target.value.trim(); if (state.route === "vertraege") render(); });
 
 document.getElementById("fileInput").addEventListener("change", async (e) => {
   const file = e.target.files[0]; if (!file) return;
@@ -971,6 +1012,8 @@ document.getElementById("csvBtn").addEventListener("click", exportCsv);
 // Linien-Panel: schließen + Notiz speichern
 document.getElementById("liniePanel").addEventListener("click", async (e) => {
   if (e.target.id === "linieClose") return closeLinie();
+  const mrow = e.target.closest("[data-linie-month]");
+  if (mrow) return selectLinieMonth(mrow.dataset.linieMonth);
   if (e.target.id === "linieNoteSave") {
     const key = state.linieNoteKey;
     if (!key) return;
@@ -991,10 +1034,17 @@ document.getElementById("view-controlling").addEventListener("click", (e) => {
 // Enter in der Suche: eindeutige Rufnummer -> direkt Monitoring öffnen
 document.getElementById("search").addEventListener("keydown", (e) => {
   if (e.key !== "Enter") return;
-  const q = (state.search || "").replace(/\D/g, "");
-  if (!q) return;
-  const hits = (state.all || []).filter((c) => String(c.rufnummer || "").replace(/\D/g, "").includes(q));
-  if (hits.length === 1) gotoLinie(hits[0].rufnummer);
+  const raw = (state.search || "").trim();
+  if (!raw) return;
+  const q = raw.replace(/\D/g, "");            // Ziffern für Rufnummer-Suche
+  const qLower = raw.toLowerCase();            // Text für Nutzer-Suche
+  const hits = (state.all || []).filter((c) => {
+    const num = String(c.rufnummer || "").replace(/\D/g, "");
+    return (q && num.includes(q)) || String(c.kostenstellennutzer || "").toLowerCase().includes(qLower);
+  });
+  if (!hits.length) return;
+  const exact = q ? hits.find((c) => String(c.rufnummer || "").replace(/\D/g, "") === q) : null;
+  gotoLinie((exact || hits[0]).rufnummer);     // exakte Nummer bevorzugt, sonst erster Treffer
 });
 
 init();

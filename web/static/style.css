@@ -208,6 +208,12 @@ tbody tr:hover .detail-btn { text-decoration: underline; }
 .mtab th { color: var(--muted); font-weight: 600; font-size: 11px; }
 .linie-open { cursor: pointer; }
 tr.linie-open:hover td { background: #fcf3f8; }
+.badge-row { display: flex; flex-wrap: wrap; gap: 6px; margin: 4px 0 14px; }
+.zl-block { margin-bottom: 10px; }
+.zl-lbl { font-size: 12px; font-weight: 600; margin-bottom: 5px; }
+.zl-lbl.warn { color: #b45309; }
+.chip.linie-open:hover { background: #f6c6df; }
+tr.linie-open.active td, .mtab tr.active td { background: #fdeaf3; font-weight: 600; }
 .drawer-head { display: flex; justify-content: space-between; align-items: start; margin-bottom: 16px; gap: 10px; }
 .drawer-head h3 { margin: 2px 0 0; }
 .drawer-actions { display: flex; gap: 8px; flex-shrink: 0; }
@@ -239,6 +245,9 @@ td.money, th.money { text-align: right; font-variant-numeric: tabular-nums; whit
 .krow { display: flex; justify-content: space-between; padding: 5px 0; font-size: 13px; }
 .krow b { font-variant-numeric: tabular-nums; }
 .krow.rabatt b { color: #166534; }
+.krow.opt span { color: var(--muted); padding-left: 6px; }
+.krow.grp span { font-weight: 600; }
+.krow.opt.rabatt b { color: #166534; }
 .krow.total { border-top: 2px solid var(--line); margin-top: 4px; padding-top: 9px; font-size: 15px; }
 .krow.total span { font-weight: 600; }
 .krow.total b { font-weight: 700; color: var(--magenta); font-size: 17px; }

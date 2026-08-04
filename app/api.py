@@ -274,6 +274,8 @@ def create_app(secret_key: str | None = None) -> FastAPI:
                             for r, v in top],
             "diff": diff,
             "prev_period": prev.get("period_start") if prev else None,
+            "gb_trend": analytics.fleet_gb_trend(db.all_invoice_lines()),
+            "zuordnungsluecken": analytics.zuordnungsluecken(lines, list(cmap.values())),
         }
 
     @app.get("/api/costs/kostenstellen", dependencies=[Depends(require_auth)])
