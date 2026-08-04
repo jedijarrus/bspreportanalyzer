@@ -247,6 +247,10 @@ td.money, th.money { text-align: right; font-variant-numeric: tabular-nums; whit
 .krow.rabatt b { color: #166534; }
 .krow.opt span { color: var(--muted); padding-left: 6px; }
 .krow.grp span { font-weight: 600; }
+.month-nav { display: inline-flex; align-items: center; gap: 6px; vertical-align: middle; }
+.month-nav select { font: inherit; font-size: 14px; padding: 4px 8px; border: 1px solid var(--line); border-radius: 8px; background: #fff; cursor: pointer; }
+.btn-xs { padding: 2px 9px; font-size: 15px; line-height: 1.1; font-weight: 700; }
+.btn-xs:disabled { opacity: .4; cursor: default; }
 .krow.opt.rabatt b { color: #166534; }
 .krow.total { border-top: 2px solid var(--line); margin-top: 4px; padding-top: 9px; font-size: 15px; }
 .krow.total span { font-weight: 600; }

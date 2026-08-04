@@ -685,13 +685,17 @@ async function renderRechnung(pane, id) {
 // ===== Bereich 3: Controlling =============================================
 async function renderControlling() {
   const pane = document.getElementById("view-controlling");
-  const latest = state.invoices.length ? state.invoices[state.invoices.length - 1] : null;
-  if (!latest) {
+  const invoices = state.invoices || [];
+  if (!invoices.length) {
     pane.innerHTML = '<div class="page"><h1 class="page-title">Controlling</h1><div class="empty">Noch keine Rechnung geladen.</div></div>';
     return;
   }
+  const sel = invoices.find((i) => i.id === state.ctrlInvoiceId) || invoices[invoices.length - 1];
+  state.ctrlInvoiceId = sel.id;
+  const selIdx = invoices.indexOf(sel);
+  const monthSel = `<span class="month-nav"><button class="btn btn-xs" id="ctrlPrev"${selIdx <= 0 ? " disabled" : ""}>‹</button><select id="ctrlMonth">${invoices.map((i) => `<option value="${i.id}"${i.id === sel.id ? " selected" : ""}>${fmtDate(i.period_start)}</option>`).join("")}</select><button class="btn btn-xs" id="ctrlNext"${selIdx >= invoices.length - 1 ? " disabled" : ""}>›</button></span>`;
   const [d, trend] = await Promise.all([
-    api(`/api/invoices/${latest.id}`), api("/api/costs/trend")]);
+    api(`/api/invoices/${sel.id}`), api("/api/costs/trend")]);
   const inv = d.invoice, rec = d.reconcile, diff = d.diff;
   const dNet = diff ? diff.gesamt.delta : null;
   const dPct = diff && diff.gesamt.alt ? (dNet / diff.gesamt.alt) * 100 : null;
@@ -724,7 +728,7 @@ async function renderControlling() {
 
   pane.innerHTML = `
     <div class="page">
-      <h1 class="page-title">Controlling <span class="muted">· Rechnung ${fmtDate(inv.period_start)}</span></h1>
+      <h1 class="page-title">Controlling ${monthSel}</h1>
       <div class="kpis">${kpis.map(([l, v, dd]) => `<div class="card"><div class="num">${v}</div><div class="lbl">${l}${dd ? " · " + dd : ""}</div></div>`).join("")}</div>
 
       <div class="section-title">Was hat sich geändert? <span class="muted">(Netto je Linie ggü. Vormonat · Zeile klicken = Monitoring)</span></div>
@@ -756,9 +760,23 @@ async function renderControlling() {
       <div class="section-title">Zuordnungslücken <span class="muted">(Prüfung Rechnung ↔ Flotte · klicken = Monitoring)</span></div>
       ${zlHtml}
     </div>`;
-  if (gb.length) drawSeries("ctrlGb", "bar", gb.map((x) => fmtDate(x.period)), gb.map((x) => x.gb), "GB");
-  drawCtrlChart("ctrlTrend", "line", trend.map((t) => fmtDate(t.period)), trend.map((t) => moneyNum(t.netto)));
+  const gbClick = (i) => gb[i] && selectCtrlByPeriod(gb[i].period);
+  const trendClick = (i) => trend[i] && selectCtrlByPeriod(trend[i].period);
+  if (gb.length) drawSeries("ctrlGb", "bar", gb.map((x) => fmtDate(x.period)), gb.map((x) => x.gb), "GB", gbClick);
+  drawSeries("ctrlTrend", "line", trend.map((t) => fmtDate(t.period)), trend.map((t) => moneyNum(t.netto)), "€", trendClick);
   drawCtrlChart("ctrlRv", "bar", rv.map((x) => x.rahmenvertrag), rv.map((x) => moneyNum(x.netto)));
+}
+// Controlling-Monatswahl
+function setCtrlInvoice(id) { state.ctrlInvoiceId = id; renderControlling(); }
+function selectCtrlByPeriod(period) {
+  const inv = (state.invoices || []).find((i) => i.period_start === period);
+  if (inv) setCtrlInvoice(inv.id);
+}
+function stepCtrl(delta) {
+  const inv = state.invoices || [];
+  const cur = inv.find((i) => i.id === state.ctrlInvoiceId) || inv[inv.length - 1];
+  const idx = inv.indexOf(cur) + delta;
+  if (idx >= 0 && idx < inv.length) setCtrlInvoice(inv[idx].id);
 }
 
 function drawCtrlChart(id, type, labels, data) {
@@ -1038,8 +1056,13 @@ document.getElementById("liniePanel").addEventListener("click", async (e) => {
 document.getElementById("linieOverlay").addEventListener("click", closeLinie);
 // Rufnummer aus Controlling-Listen -> Monitoring öffnen
 document.getElementById("view-controlling").addEventListener("click", (e) => {
+  if (e.target.id === "ctrlPrev") return stepCtrl(-1);
+  if (e.target.id === "ctrlNext") return stepCtrl(1);
   const el = e.target.closest("[data-goto-ruf]");
   if (el) gotoLinie(el.dataset.gotoRuf);
+});
+document.getElementById("view-controlling").addEventListener("change", (e) => {
+  if (e.target.id === "ctrlMonth") setCtrlInvoice(+e.target.value);
 });
 // Enter in der Suche: eindeutige Rufnummer -> direkt Monitoring öffnen
 document.getElementById("search").addEventListener("keydown", (e) => {
