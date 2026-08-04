@@ -22,6 +22,8 @@ automatisch heraus.
 - Klickbare Charts – ein Klick auf ein Balken-/Segment filtert die gesamte Sicht
 - Volltextsuche (Rufnummer, Nutzer, Kostenstelle), entfernbare Filter-Chips
 - Smart-Filter für typische Aufgaben, z. B. „VVL fällig ≤ 2 Monate"
+- Frische-Hinweis: Report-Stände älter als 14 Tage werden als „veraltet"
+  markiert (pro Rahmenvertrag + global); es wird nichts ausgeblendet
 
 **Verträge**
 - Sortierbare Vertrags-Tabelle als Drill-down-Ziel
@@ -34,8 +36,8 @@ automatisch heraus.
 - Verlauf über mehrere Reports
 
 **Kosten & Controlling**
-- Import von Telekom-Rechnungen als CSV (empfohlen — enthält Datenverbrauch je
-  Vertrag) oder XRechnung/UBL (.xml); Verknüpfung mit den Verträgen über die Rufnummer
+- Import von Telekom-Rechnungen als CSV (Positions-Export, enthält den
+  Datenverbrauch je Vertrag); Verknüpfung mit den Verträgen über die Rufnummer
 - Monatskosten und Rabatt je Vertrag (in Tabelle, Facetten und Detail-Ansicht)
 - Kosten je Kostenstelle und Kostentrend über mehrere Rechnungen
 - Netto/Brutto umschaltbar
@@ -56,8 +58,8 @@ Anschließend <http://localhost:8080> öffnen und ein Passwort festlegen.
 
 ## Nutzung
 
-1. **Laden** – einen RVKU-KI-Report (`.xlsx`) oder eine Rechnung (`.csv`, auch
-   `.xml`) hochladen; der Dateityp wird automatisch erkannt.
+1. **Laden** – einen RVKU-KI-Report (`.xlsx`) oder eine Rechnung (`.csv`)
+   hochladen; der Dateityp wird automatisch erkannt.
 2. **Filtern** – links über die Facetten oder per Klick auf die Diagramme.
 3. **Details** – eine Tabellenzeile öffnen: alle Felder, Kosten, Notiz, Druck/PDF.
 4. **Kosten** – Button oben öffnet Kostenstellen-Auswertung und Kostentrend.
@@ -71,6 +73,7 @@ Steuerung über Umgebungsvariablen (z. B. in `docker-compose.yml`):
 |---|---|---|
 | `BSP_DATA_DIR` | `data` | Verzeichnis für Datenbank, Uploads und Exporte |
 | `BSP_MAX_UPLOAD_MB` | `25` | maximale Upload-Größe in MB |
+| `BSP_MAX_REPORT_AGE_DAYS` | `14` | ab welchem Alter ein Report-Stand als „veraltet" markiert wird |
 | `BSP_SECRET_KEY` | wird in `data/secret.key` erzeugt | Schlüssel für signierte Session-Cookies |
 
 Hinter einem HTTPS-Reverse-Proxy in `app/api.py` `https_only=True` setzen.

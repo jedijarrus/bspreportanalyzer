@@ -762,7 +762,7 @@ document.getElementById("search").addEventListener("input", (e) => { state.searc
 
 document.getElementById("fileInput").addEventListener("change", async (e) => {
   const file = e.target.files[0]; if (!file) return;
-  const isInvoice = /\.(xml|csv)$/i.test(file.name);
+  const isInvoice = /\.csv$/i.test(file.name);
   const fd = new FormData(); fd.append("file", file);
   try {
     const r = await api(isInvoice ? "/api/invoices" : "/api/reports", { method: "POST", body: fd });

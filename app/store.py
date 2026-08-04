@@ -72,7 +72,7 @@ class Store:
         self.con.execute(
             "CREATE TABLE IF NOT EXISTS notes (key TEXT PRIMARY KEY, note TEXT NOT NULL)"
         )
-        # Rechnungen (XRechnung) + Positionen
+        # Rechnungen (Telekom-CSV) + Positionen
         self.con.execute(
             """
             CREATE TABLE IF NOT EXISTS invoices (

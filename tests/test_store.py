@@ -123,8 +123,8 @@ def test_leere_db_hat_keine_rechnungen(db):
     assert db.list_invoices() == []
 
 
-def test_add_invoice_taucht_in_liste_auf(db, make_invoice):
-    data = invoice_parser.parse_invoice(make_invoice(rufnummern=["0151A", "0151B"]))
+def test_add_invoice_taucht_in_liste_auf(db, make_invoice_csv):
+    data = invoice_parser.parse_invoice(make_invoice_csv(rufnummern=["0151A", "0151B"]))
     db.add_invoice(data)
     inv = db.list_invoices()
     assert len(inv) == 1
@@ -133,23 +133,23 @@ def test_add_invoice_taucht_in_liste_auf(db, make_invoice):
     assert inv[0]["period_start"] == "2026-06-01"
 
 
-def test_invoice_lines_roundtrip(db, make_invoice):
-    data = invoice_parser.parse_invoice(make_invoice(rufnummern=["0151A"], n=1))
+def test_invoice_lines_roundtrip(db, make_invoice_csv):
+    data = invoice_parser.parse_invoice(make_invoice_csv(rufnummern=["0151A"], n=1))
     iid = db.add_invoice(data)
     lines = db.get_invoice_lines(iid)
     assert len(lines) == len(data.lines)
     assert any(l["category"] == "rabatt" for l in lines)
 
 
-def test_delete_invoice_cascade(db, make_invoice):
-    iid = db.add_invoice(invoice_parser.parse_invoice(make_invoice(rufnummern=["0151A"], n=1)))
+def test_delete_invoice_cascade(db, make_invoice_csv):
+    iid = db.add_invoice(invoice_parser.parse_invoice(make_invoice_csv(rufnummern=["0151A"], n=1)))
     db.delete_invoice(iid)
     assert db.list_invoices() == []
     assert db.get_invoice_lines(iid) == []
 
 
-def test_all_invoice_lines_mit_meta(db, make_invoice):
-    db.add_invoice(invoice_parser.parse_invoice(make_invoice(rufnummern=["0151A"], n=1)))
+def test_all_invoice_lines_mit_meta(db, make_invoice_csv):
+    db.add_invoice(invoice_parser.parse_invoice(make_invoice_csv(rufnummern=["0151A"], n=1)))
     rows = db.all_invoice_lines()
     assert rows and all("_period_start" in r and "_invoice_id" in r for r in rows)
 

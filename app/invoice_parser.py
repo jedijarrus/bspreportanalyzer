@@ -1,22 +1,22 @@
-"""Liest XRechnung/UBL-Rechnungen (XML) in normalisierte Positionen.
+"""Liest Telekom-Mobilfunk-Rechnungen (Positions-CSV) in normalisierte Positionen.
 
-Kernpunkte (siehe Spec / Echtdaten-Analyse):
-- Nur Ladungen tragen Rufnummer/Kostenstelle; Rabatte und Info-Zeilen nicht.
-  Daher **Carry-Forward** in Dokumentreihenfolge: eine Zeile ohne Rufnummer erbt
-  die zuletzt gesehene (rufnummer, kostenstelle, kostenstellennutzer).
+Format: positionelles CSV (cp1252, ';') — eine Kopfzeile (>=34 Spalten,
+rechnungsweit) plus Detailzeilen (>=22 Spalten) je Rufnummer. In diesem Format
+tragen **alle** Zeilen — auch der Datenverbrauch — die Rufnummer (Spalte 5),
+daher ist Datenauslastung pro Vertrag möglich.
+
+Kernpunkte:
 - Kategorisierung der Leistungsart: grundpreis / option / rabatt / verbrauch / info.
 - Datenvolumen (vereinbart/verbraucht) wird nach GB normiert.
+- Deutsche Zahlformate mit Tausenderpunkten (_de_num).
 """
 from __future__ import annotations
 
 import csv
 import re
-import xml.etree.ElementTree as ET
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
-
-_KK_RE = re.compile(r"_Rechnung_(\d+)_")
 
 
 @dataclass
@@ -32,10 +32,6 @@ class InvoiceData:
     total_tax: float
     total_gross: float
     lines: list[dict[str, Any]] = field(default_factory=list)
-
-
-def _ln(tag: str) -> str:
-    return tag.split("}")[-1]
 
 
 def _classify(item_name: str, amount: float) -> str:
@@ -72,34 +68,12 @@ def _to_gb(value: Any, unit: Any) -> float | None:
     return x * factor if factor is not None else x  # unbekannt -> unverändert
 
 
-def _first_child_text(elem, local: str) -> str | None:
-    for c in elem:
-        if _ln(c.tag) == local:
-            return c.text
-    return None
-
-
-def _line_props(line) -> dict[str, str]:
-    props: dict[str, str] = {}
-    for p in line.iter():
-        if _ln(p.tag) == "AdditionalItemProperty":
-            nm = val = None
-            for c in p:
-                if _ln(c.tag) == "Name":
-                    nm = c.text
-                elif _ln(c.tag) == "Value":
-                    val = c.text
-            if nm is not None:
-                props[nm] = val
-    return props
-
-
 def parse_invoice(path: str | Path) -> InvoiceData:
-    """Erkennt das Format an der Endung: .csv (Telekom-Positions-CSV) oder .xml (UBL)."""
+    """Liest eine Telekom-Rechnung im Positions-CSV-Format (cp1252, ';')."""
     path = Path(path)
-    if path.suffix.lower() == ".csv":
-        return _parse_csv(path)
-    return _parse_xml(path)
+    if path.suffix.lower() != ".csv":
+        raise ValueError(f"Nur .csv-Rechnungen werden unterstützt (nicht {path.suffix!r}).")
+    return _parse_csv(path)
 
 
 def _iso(d: str | None) -> str | None:
@@ -181,107 +155,5 @@ def _parse_csv(path: Path) -> InvoiceData:
         filename=path.name, invoice_number=invoice_number, kundenkonto=kundenkonto,
         issue_date=issue_date, due_date=due_date, period_start=period_start,
         period_end=period_end, total_net=net, total_tax=tax, total_gross=round(net + tax, 2),
-        lines=lines,
-    )
-
-
-def _parse_xml(path: Path) -> InvoiceData:
-    root = ET.parse(path).getroot()
-
-    # Kopf
-    header = {}
-    for c in root:
-        header[_ln(c.tag)] = c.text
-    total_net = total_tax = total_gross = 0.0
-    for e in root.iter():
-        if _ln(e.tag) == "LegalMonetaryTotal":
-            total_net = float(_first_child_text(e, "LineExtensionAmount") or 0)
-            total_gross = float(_first_child_text(e, "TaxInclusiveAmount") or 0)
-        elif _ln(e.tag) == "TaxTotal":
-            v = _first_child_text(e, "TaxAmount")
-            if v is not None:
-                total_tax = float(v)
-
-    m = _KK_RE.search(path.name)
-    kundenkonto = m.group(1) if m else None
-
-    # Erste Runde: Zeilen einsammeln + docref-Kontext bilden. Nur Ladungen tragen
-    # Rufnummer/Kostenstelle; Rabatte/Info nicht — aber alle Zeilen eines Blocks
-    # teilen die DocumentReference/ID (= Karten-/Profilnummer). Darüber gruppieren.
-    raw: list[dict[str, Any]] = []
-    doc_ctx: dict[str, dict[str, Any]] = {}
-    periods_start, periods_end = [], []
-
-    for L in root.iter():
-        if _ln(L.tag) != "InvoiceLine":
-            continue
-        amount = float(_first_child_text(L, "LineExtensionAmount") or 0)
-        qty = _first_child_text(L, "InvoicedQuantity")
-        item_name = price = None
-        for c in L:
-            if _ln(c.tag) == "Item":
-                item_name = _first_child_text(c, "Name")
-            elif _ln(c.tag) == "Price":
-                price = _first_child_text(c, "PriceAmount")
-        p_start = p_end = docref = None
-        for e in L.iter():
-            if _ln(e.tag) == "InvoicePeriod" and p_start is None:
-                p_start = _first_child_text(e, "StartDate")
-                p_end = _first_child_text(e, "EndDate")
-            elif _ln(e.tag) == "DocumentReference" and docref is None:
-                docref = _first_child_text(e, "ID")
-        if p_start:
-            periods_start.append(p_start)
-        if p_end:
-            periods_end.append(p_end)
-
-        props = _line_props(L)
-        if docref and props.get("Rufnummer") and docref not in doc_ctx:
-            doc_ctx[docref] = {
-                "rufnummer": props.get("Rufnummer"),
-                "kostenstelle": props.get("Kostenstelle"),
-                "kostenstellennutzer": props.get("Kostenstellennutzer"),
-            }
-        raw.append({
-            "docref": docref, "props": props, "item_name": item_name,
-            "amount": amount, "qty": qty, "price": price,
-            "p_start": p_start, "p_end": p_end,
-        })
-
-    # Zweite Runde: Rufnummer/Kostenstelle je Zeile über docref-Kontext auflösen
-    lines: list[dict[str, Any]] = []
-    for r in raw:
-        props = r["props"]
-        ctx = doc_ctx.get(r["docref"], {})
-        lines.append({
-            "rufnummer": props.get("Rufnummer") or ctx.get("rufnummer"),
-            "kostenstelle": props.get("Kostenstelle") or ctx.get("kostenstelle"),
-            "kostenstellennutzer": props.get("Kostenstellennutzer") or ctx.get("kostenstellennutzer"),
-            "item_name": r["item_name"],
-            "category": _classify(r["item_name"] or "", r["amount"]),
-            "amount": r["amount"],
-            "quantity": float(r["qty"]) if r["qty"] else None,
-            "price": float(r["price"]) if r["price"] else None,
-            "period_start": r["p_start"],
-            "period_end": r["p_end"],
-            "data_contracted_gb": _to_gb(props.get("Vertraglich vereinbartes Datenvolumen"),
-                                         props.get("Vertraglich vereinbartes Dateneinheit")),
-            "data_used_gb": _to_gb(props.get("Verbrauchtes Datenvolumen"),
-                                   props.get("Verbrauchtes Dateneinheit")),
-            "vertragsbeginn": props.get("Vertragsbeginn"),
-            "mindestlaufzeit_ende": props.get("Aktuelles Ende der Mindestvertragslaufzeit"),
-        })
-
-    return InvoiceData(
-        filename=path.name,
-        invoice_number=header.get("ID"),
-        kundenkonto=kundenkonto,
-        issue_date=header.get("IssueDate"),
-        due_date=header.get("DueDate"),
-        period_start=min(periods_start) if periods_start else None,
-        period_end=max(periods_end) if periods_end else None,
-        total_net=total_net,
-        total_tax=total_tax,
-        total_gross=total_gross,
         lines=lines,
     )

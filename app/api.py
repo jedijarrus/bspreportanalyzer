@@ -210,8 +210,8 @@ def create_app(secret_key: str | None = None) -> FastAPI:
     @app.post("/api/invoices", status_code=201, dependencies=[Depends(require_auth)])
     async def upload_invoice(file: UploadFile, db: Store = Depends(get_store)):
         safe_name = Path(file.filename or "").name
-        if not safe_name.lower().endswith((".xml", ".csv")):
-            raise HTTPException(400, "Nur Rechnungen (.xml XRechnung oder .csv) werden akzeptiert.")
+        if not safe_name.lower().endswith(".csv"):
+            raise HTTPException(400, "Nur Rechnungen als Telekom-CSV (.csv) werden akzeptiert.")
         content = await file.read(config.MAX_UPLOAD_BYTES + 1)
         if len(content) > config.MAX_UPLOAD_BYTES:
             raise HTTPException(413, "Datei zu groß.")
@@ -222,7 +222,7 @@ def create_app(secret_key: str | None = None) -> FastAPI:
             data = invoice_parser.parse_invoice(dest)
         except Exception:
             dest.unlink(missing_ok=True)
-            raise HTTPException(400, "Rechnung konnte nicht gelesen werden (ungültiges XML?).")
+            raise HTTPException(400, "Rechnung konnte nicht gelesen werden (ungültige CSV?).")
         invoice_id = db.add_invoice(data)
         return {"invoice_id": invoice_id, "line_count": len(data.lines),
                 "filename": data.filename}
