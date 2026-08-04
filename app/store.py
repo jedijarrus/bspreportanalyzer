@@ -232,6 +232,16 @@ class Store:
         ).fetchall()
         return [dict(r) for r in rows]
 
+    def find_invoice(self, invoice_number: str | None) -> dict[str, Any] | None:
+        """Vorhandene Rechnung mit gleicher Rechnungsnummer (Dedup beim Upload)."""
+        if not invoice_number:
+            return None
+        row = self.con.execute(
+            "SELECT id, invoice_number, period_start FROM invoices WHERE invoice_number = ?",
+            (invoice_number,),
+        ).fetchone()
+        return dict(row) if row else None
+
     def get_invoice_lines(self, invoice_id: int) -> list[dict[str, Any]]:
         rows = self.con.execute(
             "SELECT * FROM invoice_lines WHERE invoice_id = ? ORDER BY id", (invoice_id,)

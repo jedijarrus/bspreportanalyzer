@@ -214,6 +214,14 @@ def test_invoice_upload_nur_csv(client):
                        files={"file": ("x.xml", b"<Invoice/>", "application/xml")}).status_code == 400
 
 
+def test_invoice_upload_dedup(client):
+    r1 = _upload_invoice(client, rufnummern=["0151A"], invoice_number="777")
+    assert r1.status_code == 201 and r1.json()["duplicate"] is False
+    r2 = _upload_invoice(client, rufnummern=["0151A"], invoice_number="777")  # gleiche Rechnungsnr
+    assert r2.status_code == 201 and r2.json()["duplicate"] is True
+    assert len(client.get("/api/invoices").json()) == 1  # nicht doppelt gespeichert
+
+
 def test_invoices_liste(client):
     _upload_invoice(client, rufnummern=["0151A"])
     assert len(client.get("/api/invoices").json()) == 1
