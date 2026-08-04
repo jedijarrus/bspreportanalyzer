@@ -295,6 +295,21 @@ def create_app(secret_key: str | None = None) -> FastAPI:
         return [l for l in db.get_invoice_lines(latest["id"])
                 if analytics.normalize_rufnummer(l.get("rufnummer")) == target]
 
+    @app.get("/api/linie/{rufnummer}", dependencies=[Depends(require_auth)])
+    def linie(rufnummer: str, db: Store = Depends(get_store)):
+        """Monitoring EINER Rufnummer: Kosten-/Verbrauchs-Verlauf über alle
+        Rechnungsmonate, Auffälligkeiten (Monat-zu-Monat) und Report-Stammdaten."""
+        norm = analytics.normalize_rufnummer
+        target = norm(rufnummer)
+        verlauf = analytics.linie_verlauf(db.all_invoice_lines(), rufnummer)
+        auff = analytics.linie_auffaelligkeiten(verlauf)
+        contract = next((c for c in analytics.current_fleet(db.all_contracts())
+                         if norm(c.get("rufnummer")) == target), None)
+        if contract is None and not verlauf:
+            raise HTTPException(404, "Rufnummer nicht gefunden.")
+        return {"rufnummer": rufnummer, "stammdaten": contract,
+                "verlauf": verlauf, "auffaelligkeiten": auff}
+
     @app.delete("/api/reports/{report_id}", status_code=204,
                 dependencies=[Depends(require_auth)])
     def delete_report(report_id: int, db: Store = Depends(get_store)):

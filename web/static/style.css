@@ -188,6 +188,26 @@ tbody tr:hover .detail-btn { text-decoration: underline; }
   border-left: 1px solid var(--line); box-shadow: -10px 0 40px rgba(0,0,0,.15); z-index: 41;
   overflow-y: auto; padding: 20px;
 }
+.linie-panel { width: 720px; max-width: 94vw; }
+.linie-kpis { display: flex; gap: 10px; flex-wrap: wrap; margin-bottom: 16px; }
+.linie-kpi { flex: 1; min-width: 120px; background: var(--bg); border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px; }
+.linie-kpi .num { font-size: 22px; font-weight: 700; font-variant-numeric: tabular-nums; }
+.linie-kpi .lbl { font-size: 11px; color: var(--muted); margin-top: 2px; }
+.linie-chart { height: 160px; }
+.vvl-badge { font-size: 11px; font-weight: 600; padding: 2px 8px; border-radius: 999px; white-space: nowrap; }
+.vvl-badge.red { background: #fee2e2; color: #b91c1c; border: 1px solid #fecaca; }
+.vvl-badge.ok { background: #dcfce7; color: #166534; border: 1px solid #bbf7d0; }
+.alarm { display: flex; gap: 8px; align-items: baseline; padding: 6px 0; border-bottom: 1px solid var(--line); font-size: 13px; }
+.alarm .tag { font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: .03em; padding: 1px 7px; border-radius: 999px; white-space: nowrap; }
+.alarm .tag.warn { background: #fef3c7; color: #b45309; border: 1px solid #fcd34d; }
+.alarm .tag.info { background: #eef2f7; color: #475569; border: 1px solid #e2e8f0; }
+.alarm .per { color: var(--muted); font-variant-numeric: tabular-nums; font-size: 12px; margin-left: auto; }
+.mtab { width: 100%; border-collapse: collapse; font-size: 13px; }
+.mtab th, .mtab td { text-align: right; padding: 4px 6px; border-bottom: 1px solid var(--line); font-variant-numeric: tabular-nums; }
+.mtab th:first-child, .mtab td:first-child { text-align: left; }
+.mtab th { color: var(--muted); font-weight: 600; font-size: 11px; }
+.linie-open { cursor: pointer; }
+tr.linie-open:hover td { background: #fcf3f8; }
 .drawer-head { display: flex; justify-content: space-between; align-items: start; margin-bottom: 16px; gap: 10px; }
 .drawer-head h3 { margin: 2px 0 0; }
 .drawer-actions { display: flex; gap: 8px; flex-shrink: 0; }
