@@ -13,6 +13,13 @@ from fixtures.fake_report_generator import generate_report  # noqa: E402
 from fixtures.fake_invoice_csv_generator import generate_invoice_csv  # noqa: E402
 
 
+@pytest.fixture(autouse=True)
+def _clear_azure_env(monkeypatch):
+    """Azure-SSO-ENV je Test leeren -> deterministisch (nur azure_app setzt sie)."""
+    for k in ("GRAPH_TENANT_ID", "GRAPH_CLIENT_ID", "GRAPH_CLIENT_SECRET", "BSP_BASE_URL"):
+        monkeypatch.delenv(k, raising=False)
+
+
 @pytest.fixture
 def make_report(tmp_path):
     """Factory: erzeugt eine synthetische Report-xlsx und gibt den Pfad zurück."""
