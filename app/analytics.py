@@ -478,7 +478,7 @@ def linie_verlauf(all_lines: list[dict], rufnummer: str) -> list[dict]:
     for m in by_period.values():
         for k in ("netto", "grundpreis", "optionen", "rabatt", "verbrauch"):
             m[k] = round(m[k], 2)
-        cg, ug = m["data_contracted_gb"], m["data_used_gb"]
+        cg, ug = m["data_contracted_gb"], m["data_used_gb"] or 0.0
         m["auslastung_pct"] = round(ug / cg * 100, 1) if cg else None
         m["optionen_posten"] = [{"name": n, "amount": round(a, 2)}
                                 for n, a in opt_by_period.get(m["period"], {}).items()]
