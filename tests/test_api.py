@@ -30,6 +30,52 @@ def client(app_store, make_report, make_invoice_csv):
     return c
 
 
+@pytest.fixture
+def azure_app(tmp_path, monkeypatch):
+    """App mit konfiguriertem Azure-SSO (GRAPH_*-ENV gesetzt)."""
+    monkeypatch.setenv("GRAPH_TENANT_ID", "tenant-x")
+    monkeypatch.setenv("GRAPH_CLIENT_ID", "client-x")
+    monkeypatch.setenv("GRAPH_CLIENT_SECRET", "secret-x")
+    monkeypatch.setattr(config, "UPLOAD_DIR", tmp_path / "uploads")
+    s = store.Store(tmp_path / "az.db")
+    app = create_app(secret_key="test-secret")
+    app.dependency_overrides[get_store] = lambda: s
+    yield app, s
+    s.close()
+
+
+def test_status_sso_flag(azure_app):
+    st = TestClient(azure_app[0]).get("/api/auth/status").json()
+    assert st["sso"] is True and st["configured"] is True
+
+
+def test_password_login_deaktiviert_bei_sso(azure_app):
+    c = TestClient(azure_app[0])
+    assert c.post("/api/auth/setup", json={"password": "geheim-123"}).status_code == 403
+    assert c.post("/api/auth/login", json={"password": "geheim-123"}).status_code == 403
+
+
+def test_azure_login_404_ohne_sso(app_store):
+    assert TestClient(app_store[0]).get("/api/auth/azure/login").status_code == 404
+
+
+def test_azure_callback_setzt_session(azure_app):
+    app = azure_app[0]
+
+    class _Azure:
+        async def authorize_access_token(self, request):
+            return {"userinfo": {"name": "Test Nutzer", "email": "t@firma.de"}}
+
+    class _OAuth:
+        azure = _Azure()
+
+    app.state.oauth = _OAuth()   # echten OIDC-Client durch Mock ersetzen
+    c = TestClient(app)
+    r = c.get("/api/auth/azure/callback", follow_redirects=False)
+    assert r.status_code == 303
+    assert c.get("/api/reports").status_code == 200   # Session gesetzt -> Zugriff frei
+
+
 def _upload_invoice(client, rufnummern=None, n=3, invoice_number="230000000001", period=None):
     kw = {"rufnummern": rufnummern, "n": n, "invoice_number": invoice_number}
     if period:

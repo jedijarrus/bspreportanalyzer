@@ -24,6 +24,23 @@ MAX_REPORT_AGE_DAYS = int(os.environ.get("BSP_MAX_REPORT_AGE_DAYS", "14"))
 HTTPS_ONLY = os.environ.get("BSP_HTTPS_ONLY", "").strip().lower() in ("1", "true", "yes", "on")
 
 
+# ---- Azure / Entra ID SSO (optional) ------------------------------------
+# Wiederverwendung einer vorhandenen Graph-App-Registrierung. Sind alle drei
+# gesetzt, gilt SSO als konfiguriert -> Passwort-Login wird deaktiviert.
+def azure_settings() -> dict[str, str | None]:
+    return {
+        "tenant": os.environ.get("GRAPH_TENANT_ID") or None,
+        "client_id": os.environ.get("GRAPH_CLIENT_ID") or None,
+        "client_secret": os.environ.get("GRAPH_CLIENT_SECRET") or None,
+        "base_url": os.environ.get("BSP_BASE_URL") or None,
+    }
+
+
+def azure_configured() -> bool:
+    s = azure_settings()
+    return bool(s["tenant"] and s["client_id"] and s["client_secret"])
+
+
 def get_secret_key() -> str:
     """Secret für signierte Session-Cookies.
 

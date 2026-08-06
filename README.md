@@ -75,8 +75,22 @@ Steuerung über Umgebungsvariablen (z. B. in `docker-compose.yml`):
 | `BSP_MAX_UPLOAD_MB` | `25` | maximale Upload-Größe in MB |
 | `BSP_MAX_REPORT_AGE_DAYS` | `14` | ab welchem Alter ein Report-Stand als „veraltet" markiert wird |
 | `BSP_SECRET_KEY` | wird in `data/secret.key` erzeugt | Schlüssel für signierte Session-Cookies |
+| `BSP_HTTPS_ONLY` | `false` | Session-Cookie nur über HTTPS (hinter TLS-Proxy auf `true`) |
+| `BSP_BASE_URL` | aus Request abgeleitet | Basis-URL für die SSO-Redirect-URI hinter einem Proxy |
+| `GRAPH_TENANT_ID` / `GRAPH_CLIENT_ID` / `GRAPH_CLIENT_SECRET` | — | Azure/Entra-ID-SSO (alle drei = SSO aktiv) |
 
-Hinter einem HTTPS-Reverse-Proxy in `app/api.py` `https_only=True` setzen.
+### Anmeldung
+
+Standard: Passwort beim ersten Start setzen (Session-Cookie). Sind die drei
+`GRAPH_*`-Variablen gesetzt, läuft die Anmeldung **ausschließlich über Microsoft
+Entra ID (SSO)** — das Passwort-Login ist dann deaktiviert.
+
+**Azure-Einrichtung:** vorhandene App-Registrierung nutzbar. Redirect-URI (Plattform
+„Web") `<BASE_URL>/api/auth/azure/callback` eintragen, ein Client-Secret anlegen und
+Tenant-/Client-ID in die `GRAPH_*`-Variablen setzen. Der Zugriff wird über die
+Enterprise-App gesteuert (*Assignment required = Yes* + Nutzer/Gruppen zuweisen) —
+die App akzeptiert nur zugewiesene Nutzer des Tenants. **Break-glass:** die
+`GRAPH_*`-Variablen entfernen ⇒ Rückfall auf Passwort-Login.
 
 ## Entwicklung
 

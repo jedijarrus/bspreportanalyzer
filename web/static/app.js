@@ -579,13 +579,19 @@ function showAuth(mode) {
   document.getElementById("appMain").hidden = true;
   ["logoutBtn", "settingsBtn", "netbrutto", "mainnav"].forEach((i) => (document.getElementById(i).hidden = true));
   const setup = mode === "setup";
+  const sso = mode === "sso";
   document.getElementById("authTitle").textContent = setup ? "Passwort festlegen" : "Anmelden";
-  document.getElementById("authHint").textContent = setup
-    ? "Erstes Setup: Passwort für den Zugang festlegen (mind. 8 Zeichen)." : "Bitte Passwort eingeben.";
-  document.getElementById("authPw2").hidden = !setup;
+  document.getElementById("authHint").textContent = sso
+    ? "Anmeldung über Microsoft Entra ID."
+    : (setup ? "Erstes Setup: Passwort für den Zugang festlegen (mind. 8 Zeichen)." : "Bitte Passwort eingeben.");
+  // Passwort-Felder + Weiter nur ohne SSO; bei SSO stattdessen der Microsoft-Button
+  document.getElementById("authPw").hidden = sso;
+  document.getElementById("authPw2").hidden = sso || !setup;
+  document.getElementById("authSubmit").hidden = sso;
+  document.getElementById("authSso").hidden = !sso;
   ["authPw", "authPw2"].forEach((i) => (document.getElementById(i).value = ""));
   document.getElementById("authError").textContent = "";
-  document.getElementById("authPw").focus();
+  if (!sso) document.getElementById("authPw").focus();
 }
 function showApp() {
   document.getElementById("authOverlay").hidden = true;
@@ -612,9 +618,10 @@ async function submitAuth() {
 async function init() {
   try {
     const st = await api("/api/auth/status");
-    if (!st.configured) showAuth("setup");
-    else if (!st.authenticated) showAuth("login");
-    else showApp();
+    if (st.authenticated) showApp();
+    else if (st.sso) showAuth("sso");
+    else if (!st.configured) showAuth("setup");
+    else showAuth("login");
   } catch (e) { showAuth("login"); }
 }
 

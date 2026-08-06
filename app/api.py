@@ -14,7 +14,7 @@ import datetime as dt
 from pathlib import Path
 
 from fastapi import Depends, FastAPI, HTTPException, UploadFile
-from fastapi.responses import HTMLResponse, JSONResponse, Response
+from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse, Response
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from pydantic import BaseModel
@@ -36,6 +36,15 @@ VVL_VIEW_FIELDS = (
 
 class PasswordBody(BaseModel):
     password: str
+
+
+def _azure_redirect_uri(request: Request) -> str:
+    """Redirect-URI für den OIDC-Callback. Hinter dem HTTPS-Proxy über BSP_BASE_URL,
+    sonst aus dem Request abgeleitet."""
+    base = config.azure_settings().get("base_url")
+    if base:
+        return base.rstrip("/") + "/api/auth/azure/callback"
+    return str(request.url_for("azure_callback"))
 
 
 class NoteBody(BaseModel):
@@ -78,6 +87,22 @@ def create_app(secret_key: str | None = None) -> FastAPI:
         https_only=config.HTTPS_ONLY,  # via BSP_HTTPS_ONLY setzen, wenn hinter TLS-Proxy
     )
     app.state.login_fails = {"count": 0, "until": 0.0}  # simple Brute-Force-Bremse
+
+    # Azure/Entra-ID SSO nur registrieren, wenn konfiguriert (Import lazy -> Passwort-
+    # only-Deployments brauchen authlib nicht).
+    app.state.oauth = None
+    if config.azure_configured():
+        from authlib.integrations.starlette_client import OAuth
+        s = config.azure_settings()
+        oauth = OAuth()
+        oauth.register(
+            name="azure",
+            client_id=s["client_id"],
+            client_secret=s["client_secret"],
+            server_metadata_url=f"https://login.microsoftonline.com/{s['tenant']}/v2.0/.well-known/openid-configuration",
+            client_kwargs={"scope": "openid profile email"},
+        )
+        app.state.oauth = oauth
     templates = Jinja2Templates(directory=str(WEB_DIR / "templates"))
     static_dir = WEB_DIR / "static"
     if static_dir.exists():
@@ -91,13 +116,17 @@ def create_app(secret_key: str | None = None) -> FastAPI:
     # ---- Auth -----------------------------------------------------------
     @app.get("/api/auth/status")
     def auth_status(request: Request, db: Store = Depends(get_store)):
+        sso = config.azure_configured()
         return {
-            "configured": db.get_setting(PW_HASH_KEY) is not None,
+            "configured": sso or db.get_setting(PW_HASH_KEY) is not None,
             "authenticated": bool(request.session.get("auth")),
+            "sso": sso,
         }
 
     @app.post("/api/auth/setup", status_code=201)
     def auth_setup(body: PasswordBody, request: Request, db: Store = Depends(get_store)):
+        if config.azure_configured():
+            raise HTTPException(403, "SSO aktiv – Passwort-Login ist deaktiviert.")
         if db.get_setting(PW_HASH_KEY) is not None:
             raise HTTPException(409, "Passwort ist bereits gesetzt.")
         if len(body.password) < MIN_PASSWORD_LEN:
@@ -108,6 +137,8 @@ def create_app(secret_key: str | None = None) -> FastAPI:
 
     @app.post("/api/auth/login")
     def auth_login(body: PasswordBody, request: Request, db: Store = Depends(get_store)):
+        if config.azure_configured():
+            raise HTTPException(403, "SSO aktiv – Passwort-Login ist deaktiviert.")
         st = request.app.state.login_fails
         now = dt.datetime.now().timestamp()
         if st["until"] > now:
@@ -126,6 +157,27 @@ def create_app(secret_key: str | None = None) -> FastAPI:
     def auth_logout(request: Request):
         request.session.clear()
         return {"status": "ok"}
+
+    # ---- Azure / Entra ID SSO (nur wenn konfiguriert) ------------------
+    @app.get("/api/auth/azure/login")
+    async def azure_login(request: Request):
+        if request.app.state.oauth is None:
+            raise HTTPException(404, "SSO nicht konfiguriert.")
+        return await request.app.state.oauth.azure.authorize_redirect(request, _azure_redirect_uri(request))
+
+    @app.get("/api/auth/azure/callback", name="azure_callback")
+    async def azure_callback(request: Request):
+        if request.app.state.oauth is None:
+            raise HTTPException(404, "SSO nicht konfiguriert.")
+        try:
+            # authlib validiert das id_token (Signatur/exp/aud/iss/nonce) gegen die Tenant-Metadaten
+            token = await request.app.state.oauth.azure.authorize_access_token(request)
+        except Exception:
+            raise HTTPException(401, "SSO-Anmeldung fehlgeschlagen.")
+        claims = token.get("userinfo") or {}
+        request.session["auth"] = True
+        request.session["user"] = claims.get("name") or claims.get("preferred_username") or claims.get("email")
+        return RedirectResponse("/", status_code=303)
 
     # ---- Report-Verwaltung ---------------------------------------------
     @app.post("/api/reports", status_code=201, dependencies=[Depends(require_auth)])
