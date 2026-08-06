@@ -1,6 +1,9 @@
 services:
   analyzer:
-    build: .
+    build:
+      context: .
+      args:
+        BSP_GIT_SHA: ${BSP_GIT_SHA:-unknown}
     container_name: bsp-report-analyzer
     ports:
       # nur der Host-Port ist konfigurierbar; im Container lauscht uvicorn fix auf 8080

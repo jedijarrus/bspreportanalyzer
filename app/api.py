@@ -21,7 +21,7 @@ from pydantic import BaseModel
 from starlette.middleware.sessions import SessionMiddleware
 from starlette.requests import Request
 
-from app import analytics, auth, config, invoice_parser, parser
+from app import analytics, auth, config, invoice_parser, parser, version
 from app.store import Store
 
 WEB_DIR = Path(__file__).resolve().parents[1] / "web"
@@ -103,6 +103,11 @@ def create_app(secret_key: str | None = None) -> FastAPI:
             client_kwargs={"scope": "openid profile email"},
         )
         app.state.oauth = oauth
+
+    _bi = version.build_info()
+    print(f"[BSP] Version {_bi['sha']} · gebaut {_bi['built']} · "
+          f"SSO={'an' if config.azure_configured() else 'aus'}", flush=True)
+
     templates = Jinja2Templates(directory=str(WEB_DIR / "templates"))
     static_dir = WEB_DIR / "static"
     if static_dir.exists():
@@ -112,6 +117,10 @@ def create_app(secret_key: str | None = None) -> FastAPI:
     @app.get("/", response_class=HTMLResponse)
     def dashboard(request: Request):
         return templates.TemplateResponse(request, "dashboard.html")
+
+    @app.get("/api/version")
+    def app_version():
+        return version.build_info()   # Build-Marker: sha + Bauzeit (erkennt altes Image)
 
     # ---- Auth -----------------------------------------------------------
     @app.get("/api/auth/status")

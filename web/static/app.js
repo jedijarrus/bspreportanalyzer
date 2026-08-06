@@ -617,6 +617,10 @@ async function submitAuth() {
 }
 async function init() {
   try {
+    api("/api/version").then((v) => {   // Build-Marker im Login-Screen (erkennt altes Image)
+      const el = document.getElementById("buildInfo");
+      if (el) el.textContent = `Version ${v.sha} · gebaut ${v.built}`;
+    }).catch(() => {});
     const st = await api("/api/auth/status");
     if (st.authenticated) showApp();
     else if (st.sso) showAuth("sso");
