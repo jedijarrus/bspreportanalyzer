@@ -67,7 +67,7 @@ const state = {
   sortCol: "bindefristende", sortDir: 1,
   drawerKey: null,
   brutto: false, bruttoFactor: 1.19, rechnungStand: null,
-  route: "vertraege",
+  route: null,   // erst durch navigate() gesetzt -> Deep-Link (#/linie/…) rendert Hintergrund korrekt
 };
 
 // Betrag ggf. auf Brutto umrechnen
@@ -909,7 +909,7 @@ function renderLinie(d) {
     ? alarms.map((a) => `<div class="alarm"><span class="tag ${a.typ === "option_neu" || a.typ === "option_weg" ? "info" : "warn"}">${ALARM_TXT[a.typ] || a.typ}</span><span>${esc(a.text)}</span><span class="per">${fmtDate(a.period)}</span></div>`).join("")
     : '<div class="hint">keine Auffälligkeiten</div>';
   const rows = v.slice().reverse().map((m) =>
-    `<tr class="linie-open${m.period === state.linieMonth ? " active" : ""}" data-linie-month="${m.period}" title="Aufstellung dieses Monats"><td>${fmtDate(m.period)}</td><td>${m.data_used_gb != null ? m.data_used_gb.toLocaleString("de-DE") + " GB" : "–"}</td><td>${m.auslastung_pct != null ? m.auslastung_pct + "%" : "–"}</td><td>${money(m.netto)}</td></tr>`).join("");
+    `<tr class="linie-open${m.period === state.linieMonth ? " active" : ""}" data-linie-month="${esc(m.period)}" title="Aufstellung dieses Monats"><td>${fmtDate(m.period)}</td><td>${m.data_used_gb != null ? m.data_used_gb.toLocaleString("de-DE") + " GB" : "–"}</td><td>${m.auslastung_pct != null ? m.auslastung_pct + "%" : "–"}</td><td>${money(m.netto)}</td></tr>`).join("");
   const factRow = (f) => sd[f] ? `<div class="dl"><span>${esc((state.fields || {})[f] || f)}</span><b>${esc(sd[f])}</b></div>` : "";
   const facts = ["tarif", "vertragsstatus", "kartentyp", "vertragsbeginn", "bindefristende", "vvl_berechtigung", "daten_optionen", "voice_optionen", "roaming_optionen"].map(factRow).join("");
   const key = sd.rufnummer ? noteKey(sd) : null;
@@ -959,7 +959,7 @@ document.getElementById("fileInput").addEventListener("change", async (e) => {
     const fd = new FormData(); fd.append("file", file);
     try {
       const r = await api(isInvoice ? "/api/invoices" : "/api/reports", { method: "POST", body: fd });
-      if (isInvoice) { if (r.duplicate) dup++; else inv++; } else rep++;
+      if (r.duplicate) dup++; else if (isInvoice) inv++; else rep++;
     } catch (_) { err++; }
   }
   const parts = [];

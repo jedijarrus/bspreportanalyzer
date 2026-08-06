@@ -138,9 +138,14 @@ def create_app(secret_key: str | None = None) -> FastAPI:
         except Exception:
             dest.unlink(missing_ok=True)
             raise HTTPException(400, "Report konnte nicht gelesen werden (ungültiges xlsx?).")
+        rd = data.report_date.isoformat() if data.report_date else None
+        existing = db.find_report(data.filename, rd, len(data.rows))
+        if existing:  # Dedup: identische Report-Datei schon importiert
+            return {"report_id": existing["id"], "duplicate": True,
+                    "row_count": 0, "filename": data.filename}
         report_id = db.add_report(data)
-        return {"report_id": report_id, "row_count": len(data.rows),
-                "filename": data.filename}
+        return {"report_id": report_id, "duplicate": False,
+                "row_count": len(data.rows), "filename": data.filename}
 
     @app.get("/api/reports", dependencies=[Depends(require_auth)])
     def list_reports(db: Store = Depends(get_store)):
