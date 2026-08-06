@@ -412,6 +412,13 @@ def test_linie_verlauf_leer_wenn_rufnummer_fehlt():
     assert analytics.linie_verlauf(lines, "0151-1") == []
 
 
+def test_linie_verlauf_contracted_ohne_used_kein_crash():
+    # Datenvolumen vereinbart, aber kein Verbrauch gemeldet -> auslastung 0.0, kein TypeError
+    lines = [_iline("2026-06-01", "0151 1", "info", 0.0, "Datenvolumen", cg=80.0)]  # ug=None
+    v = analytics.linie_verlauf(lines, "0151-1")
+    assert v[0]["auslastung_pct"] == 0.0
+
+
 def test_linie_verlauf_optionen_posten_mit_betrag():
     lines = [
         _iline("2026-06-01", "0151 1", "grundpreis", 69.71, "Business Mobil L"),
