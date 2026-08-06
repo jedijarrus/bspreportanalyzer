@@ -1,8 +1,9 @@
 :root {
   --magenta: #e20074; --magenta-dark: #b3005c;
-  --ink: #1a1a1a; --muted: #6b7280; --line: #e5e7eb; --bg: #f4f4f6; --card: #fff;
+  --ink: #1a1a1a; --muted: #4b5563; --line: #e5e7eb; --bg: #f4f4f6; --card: #fff;
 }
 * { box-sizing: border-box; }
+:focus-visible { outline: 2px solid var(--magenta); outline-offset: 2px; border-radius: 3px; }
 body { margin: 0; font-family: "Segoe UI", system-ui, -apple-system, sans-serif; color: var(--ink); background: var(--bg); }
 
 /* Topbar */
@@ -166,8 +167,9 @@ select { padding: 8px 10px; border: 1px solid var(--line); border-radius: 8px; f
 .table-wrap { overflow-x: auto; border: 1px solid var(--line); border-radius: 12px; background: #fff; }
 table { width: 100%; border-collapse: collapse; font-size: 13px; }
 th, td { padding: 9px 12px; text-align: left; border-bottom: 1px solid var(--line); white-space: nowrap; }
-th { background: #fafafa; font-weight: 600; cursor: pointer; user-select: none; position: sticky; top: 0; }
-th:hover { color: var(--magenta); }
+th { background: #fafafa; font-weight: 600; user-select: none; position: sticky; top: 0; }
+#grid th { cursor: pointer; }        /* nur das Grid ist sortierbar */
+#grid th:hover { color: var(--magenta); }
 tbody tr { cursor: pointer; }
 tbody tr:hover td { background: #fcf3f8; }
 .badge { padding: 2px 8px; border-radius: 999px; font-size: 11px; font-weight: 600; background: #eef2f7; color: #334155; }
