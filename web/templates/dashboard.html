@@ -3,14 +3,14 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>BSP Controlling</title>
+  <title>Telekom Controlling</title>
   <link rel="stylesheet" href="/static/style.css">
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.7/dist/chart.umd.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/@azure/msal-browser@3.28.1/lib/msal-browser.min.js"></script>
 </head>
 <body>
   <header class="topbar">
-    <div class="brand"><span class="dot"></span> BSP&nbsp;Controlling</div>
+    <div class="brand"><span class="dot"></span> Telekom&nbsp;Controlling</div>
     <nav class="mainnav" id="mainnav" hidden>
       <a class="navtab" data-route="vertraege" href="#/vertraege">Verträge</a>
       <a class="navtab" data-route="rechnungen" href="#/rechnungen">Rechnungen</a>
@@ -29,6 +29,7 @@
         <input type="file" id="fileInput" accept=".xlsx,.csv" multiple hidden>
       </label>
       <button class="btn" id="settingsBtn" hidden title="Einstellungen">Einstellungen</button>
+      <span id="userInfo" class="user-info" hidden></span>
       <button class="btn" id="logoutBtn" hidden>Abmelden</button>
     </div>
   </header>
@@ -36,7 +37,7 @@
   <!-- Auth-Modal -->
   <div id="authOverlay" class="auth-overlay" hidden>
     <div class="auth-box">
-      <div class="brand"><span class="dot"></span> BSP Controlling</div>
+      <div class="brand"><span class="dot"></span> Telekom Controlling</div>
       <h2 id="authTitle">Anmelden</h2>
       <p id="authHint" class="hint"></p>
       <input type="password" id="authPw" placeholder="Passwort" aria-label="Passwort" autocomplete="current-password">
@@ -44,8 +45,6 @@
       <div id="authError" class="auth-error"></div>
       <button class="btn btn-primary" id="authSubmit">Weiter</button>
       <button class="btn btn-primary" id="authSso" hidden>Login mit Microsoft</button>
-      <a id="authDevice" class="build-info" href="#" hidden>oder per Gerätecode anmelden</a>
-      <div id="deviceBox" class="device-box" hidden></div>
       <div id="buildInfo" class="build-info"></div>
     </div>
   </div>
@@ -101,12 +100,14 @@
   <div id="settingsOverlay" class="modal-overlay" hidden>
     <div class="modal-box">
       <div class="modal-head"><h2>Einstellungen</h2><button class="btn" id="settingsClose">Schließen</button></div>
-      <h3>Reports (.xlsx)</h3>
-      <p class="hint">Löschen entfernt den Snapshot aus der aktuellen Sicht.</p>
-      <ul id="reportList" class="report-list"></ul>
-      <h3>Rechnungen (.csv)</h3>
-      <p class="hint">Telekom-CSV empfohlen (enthält Datenverbrauch je Vertrag). Löschen entfernt die Rechnung und ihre Kostenzuordnung.</p>
-      <ul id="invoiceList" class="report-list"></ul>
+      <div class="modal-body">
+        <h3>Reports (.xlsx)</h3>
+        <p class="hint">Löschen entfernt den Snapshot aus der aktuellen Sicht.</p>
+        <ul id="reportList" class="report-list"></ul>
+        <h3>Rechnungen (.csv)</h3>
+        <p class="hint">Telekom-CSV empfohlen (enthält Datenverbrauch je Vertrag). Löschen entfernt die Rechnung und ihre Kostenzuordnung.</p>
+        <ul id="invoiceList" class="report-list"></ul>
+      </div>
     </div>
   </div>
 

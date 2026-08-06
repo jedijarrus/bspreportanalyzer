@@ -21,7 +21,7 @@ from pydantic import BaseModel
 from starlette.middleware.sessions import SessionMiddleware
 from starlette.requests import Request
 
-from app import analytics, auth, azure_device, azure_verify, config, invoice_parser, parser, version
+from app import analytics, auth, azure_verify, config, invoice_parser, parser, version
 from app.store import Store
 
 WEB_DIR = Path(__file__).resolve().parents[1] / "web"
@@ -134,6 +134,7 @@ def create_app(secret_key: str | None = None) -> FastAPI:
         return {
             "configured": sso or db.get_setting(PW_HASH_KEY) is not None,
             "authenticated": bool(request.session.get("auth")),
+            "user": request.session.get("user"),   # angezeigter Name (nur bei SSO gesetzt)
             "sso": sso,
             # client_id/tenant sind öffentliche IDs (keine Secrets) -> fürs MSAL-Setup im Frontend
             "azure": {"client_id": s.get("client_id"), "tenant": s.get("tenant")} if sso else None,
@@ -194,44 +195,6 @@ def create_app(secret_key: str | None = None) -> FastAPI:
         request.session["auth"] = True
         request.session["user"] = claims.get("name") or claims.get("preferred_username") or claims.get("email")
         return RedirectResponse("/", status_code=303)
-
-    # ---- Device-Code-Flow (ohne Redirect-URI/HTTPS) --------------------
-    @app.post("/api/auth/device/start")
-    def device_start(request: Request):
-        if not config.azure_configured():
-            raise HTTPException(404, "SSO nicht konfiguriert.")
-        s = config.azure_settings()
-        try:
-            data = azure_device.device_start(s["tenant"], s["client_id"])
-        except Exception:
-            raise HTTPException(502, "Microsoft-Anmeldung nicht erreichbar.")
-        request.session["device_code"] = data.get("device_code")  # serverseitig halten
-        return {"user_code": data.get("user_code"), "verification_uri": data.get("verification_uri"),
-                "interval": data.get("interval", 5), "expires_in": data.get("expires_in", 900)}
-
-    @app.post("/api/auth/device/poll")
-    def device_poll(request: Request):
-        if not config.azure_configured():
-            raise HTTPException(404, "SSO nicht konfiguriert.")
-        dc = request.session.get("device_code")
-        if not dc:
-            return {"status": "none"}
-        s = config.azure_settings()
-        status, body = azure_device.device_poll(s["tenant"], s["client_id"], dc)
-        if status == 200:
-            claims = azure_device.id_token_claims(body["id_token"])
-            if claims.get("aud") != s["client_id"] or claims.get("tid") != s["tenant"]:
-                request.session.pop("device_code", None)
-                raise HTTPException(401, "Token-Validierung fehlgeschlagen.")
-            request.session.pop("device_code", None)
-            request.session["auth"] = True
-            request.session["user"] = claims.get("name") or claims.get("preferred_username")
-            return {"status": "authenticated"}
-        err = (body or {}).get("error")
-        if err in ("authorization_pending", "slow_down"):
-            return {"status": "pending"}
-        request.session.pop("device_code", None)   # expired/declined -> Flow beenden
-        return {"status": "error", "error": err or "unbekannt"}
 
     # ---- MSAL-Login: Frontend holt Token (Popup/Redirect), Server validiert ---
     @app.post("/api/auth/azure/verify")

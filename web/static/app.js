@@ -589,17 +589,20 @@ function showAuth(mode) {
   document.getElementById("authPw2").hidden = sso || !setup;
   document.getElementById("authSubmit").hidden = sso;
   document.getElementById("authSso").hidden = !sso;
-  document.getElementById("authDevice").hidden = !sso;
-  document.getElementById("deviceBox").hidden = true;
   ["authPw", "authPw2"].forEach((i) => (document.getElementById(i).value = ""));
   document.getElementById("authError").textContent = "";
   if (!sso) document.getElementById("authPw").focus();
 }
+function setUser(name) {
+  const el = document.getElementById("userInfo");
+  if (name) { el.textContent = name; el.title = name; el.hidden = false; }
+  else { el.textContent = ""; el.hidden = true; }
+}
 function showApp() {
-  clearInterval(_devTimer);
   document.getElementById("authOverlay").hidden = true;
   document.getElementById("appMain").hidden = false;
   ["logoutBtn", "settingsBtn", "netbrutto", "mainnav"].forEach((i) => (document.getElementById(i).hidden = false));
+  api("/api/auth/status").then((st) => setUser(st.user)).catch(() => {});   // Name oben rechts (alle Login-Wege)
   loadData();
 }
 async function submitAuth() {
@@ -623,7 +626,7 @@ async function msalLogin() {
   const err = document.getElementById("authError"); err.textContent = "";
   const az = state.azure || {};
   if (typeof msal === "undefined" || !az.client_id) {
-    err.textContent = "Microsoft-Login nicht verfügbar — nutze den Gerätecode.";
+    err.textContent = "Microsoft-Login nicht verfügbar.";
     return;
   }
   const inst = new msal.PublicClientApplication({
@@ -640,33 +643,6 @@ async function msalLogin() {
   }
 }
 
-let _devTimer = null;
-async function startDevice() {
-  const err = document.getElementById("authError"); err.textContent = "";
-  document.getElementById("authSso").hidden = true;
-  const box = document.getElementById("deviceBox");
-  box.hidden = false; box.innerHTML = '<div class="hint">starte …</div>';
-  let d;
-  try { d = await api("/api/auth/device/start", { method: "POST" }); }
-  catch (e) { box.hidden = true; document.getElementById("authSso").hidden = false; err.textContent = e.message || "Fehler."; return; }
-  box.innerHTML = `
-    <div class="dev-step">1. Öffnen: <a href="${esc(d.verification_uri)}" target="_blank" rel="noopener">${esc(d.verification_uri)}</a></div>
-    <div class="dev-step">2. Diesen Code eingeben:</div>
-    <div class="dev-code">${esc(d.user_code)}</div>
-    <div class="dev-wait">warte auf Anmeldung …</div>`;
-  const iv = Math.max(2, d.interval || 5) * 1000;
-  clearInterval(_devTimer);
-  _devTimer = setInterval(async () => {
-    let r;
-    try { r = await api("/api/auth/device/poll", { method: "POST" }); } catch (e) { return; }
-    if (r.status === "authenticated") { clearInterval(_devTimer); showApp(); }
-    else if (r.status === "error" || r.status === "none") {
-      clearInterval(_devTimer);
-      box.hidden = true; document.getElementById("authSso").hidden = false;
-      err.textContent = "Anmeldung abgebrochen/abgelaufen — erneut versuchen.";
-    }
-  }, iv);
-}
 async function init() {
   try {
     api("/api/version").then((v) => {   // Build-Marker im Login-Screen (erkennt altes Image)
@@ -1018,12 +994,12 @@ function renderLinie(d) {
 // ---- events ---------------------------------------------------------------
 document.getElementById("authSubmit").addEventListener("click", submitAuth);
 document.getElementById("authSso").addEventListener("click", msalLogin);
-document.getElementById("authDevice").addEventListener("click", (e) => { e.preventDefault(); startDevice(); });
 ["authPw", "authPw2"].forEach((i) => document.getElementById(i).addEventListener("keydown", (e) => { if (e.key === "Enter") submitAuth(); }));
 
 document.getElementById("logoutBtn").addEventListener("click", async () => {
   await fetch("/api/auth/logout", { method: "POST" });
-  state.all = []; state.filters = {}; showAuth("login");
+  state.all = []; state.filters = {}; setUser(null);
+  showAuth(state.azure ? "sso" : "login");   // bei SSO wieder Microsoft-Login, kein Passwort-Popup
 });
 
 document.getElementById("search").addEventListener("input", (e) => { state.search = e.target.value.trim(); if (state.route === "vertraege") render(); });
