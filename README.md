@@ -86,12 +86,21 @@ Standard: Passwort beim ersten Start setzen (Session-Cookie). Sind die drei
 `GRAPH_*`-Variablen gesetzt, läuft die Anmeldung **ausschließlich über Microsoft
 Entra ID (SSO)** — das Passwort-Login ist dann deaktiviert.
 
-**Azure-Einrichtung:** vorhandene App-Registrierung nutzbar. Redirect-URI (Plattform
-„Web") `<BASE_URL>/api/auth/azure/callback` eintragen, ein Client-Secret anlegen und
-Tenant-/Client-ID in die `GRAPH_*`-Variablen setzen. Der Zugriff wird über die
-Enterprise-App gesteuert (*Assignment required = Yes* + Nutzer/Gruppen zuweisen) —
-die App akzeptiert nur zugewiesene Nutzer des Tenants. **Break-glass:** die
+**Login-Ablauf (Device-Code):** Klick auf „Login mit Microsoft" → die App zeigt einen
+Code an → auf `https://microsoft.com/devicelogin` eingeben und mit dem Firmenkonto
+anmelden → fertig. **Kein Redirect-URI und kein HTTPS nötig** (der Server spricht
+direkt mit Microsoft) — läuft also auch hinter `http://host:port`.
+
+**Azure-Einrichtung:** vorhandene App-Registrierung nutzbar (Tenant-/Client-ID/Secret in
+die `GRAPH_*`-Variablen). In der App-Registrierung unter **Authentication** →
+**„Allow public client flows = Yes"** aktivieren (für den Device-Code-Flow). Der Zugriff
+wird über die Enterprise-App gesteuert (*Assignment required = Yes* + Nutzer/Gruppen
+zuweisen) — nur zugewiesene Nutzer des Tenants kommen rein. **Break-glass:** die
 `GRAPH_*`-Variablen entfernen ⇒ Rückfall auf Passwort-Login.
+
+*(Alternativ existiert auch der klassische Redirect-Flow unter
+`/api/auth/azure/callback` — nur relevant, wenn HTTPS + Web-Redirect-URI vorhanden sind;
+die UI nutzt standardmäßig den Device-Code-Flow.)*
 
 ## Entwicklung
 
