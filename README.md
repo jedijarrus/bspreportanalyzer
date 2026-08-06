@@ -1,50 +1,56 @@
-# BSP Report Analyzer
+# BSP Report & Invoice Analyzer
 
-Interaktives Dashboard zur Auswertung von Telekom-BSP-Reports (RVKU-KI,
-Mobilfunk-Rahmenverträge). Reports hochladen, den Bestand filtern und Verträge
-im Blick behalten – als eigenständiger Docker-Container.
+Selbst-gehostetes Controlling-Dashboard für Telekom-Mobilfunk-Rahmenverträge.
+Zwei Datenquellen — **Reports** (Stammdaten der Flotte) und **Rechnungen**
+(Monatskosten + Datenverbrauch) — laufen zu einer durchsuchbaren Gesamtsicht
+zusammen, verknüpft über die Rufnummer. Läuft als eigenständiger Docker-Container
+mit Passwort- oder Microsoft-Entra-ID-Login.
 
-## Überblick
+## Zwei Datenquellen
 
-Der Analyzer liest die Excel-Exporte des Telekom Business Service Portals
-(ein Datensatz pro SIM/Anschluss) ein und stellt sie als durchsuchbare,
-filterbare Gesamtsicht dar. Statt einzelne Exporte nebeneinanderzulegen, zeigt
-das Dashboard immer den **aktuellen Stand über alle Rahmenverträge**: pro
-Rahmenvertrag zählt jeweils der neueste Report, gekündigte Anschlüsse fallen
-automatisch heraus.
+Das Tool liest zwei sich ergänzende Telekom-Exporte ein; beim Upload wird der
+Dateityp automatisch erkannt:
 
-## Features
+- **Report (`.xlsx`)** – RVKU-KI-Export aus dem Business Service Portal, ein
+  Datensatz pro SIM/Anschluss: Tarif, Optionen, Status, Bindefrist/VVL,
+  Kostenstelle, Nutzer. Liefert den **aktuellen Stand der Flotte**.
+- **Rechnung (`.csv`)** – Positions-Export einer Monatsrechnung: Grundpreise,
+  Optionen, Rabatte und **Datenverbrauch je Rufnummer**. Liefert die
+  **tatsächlichen Kosten pro Monat**.
 
-**Flottensicht & Filter**
-- Aktuelle Gesamtsicht über alle Rahmenverträge
-- Faceted-Filter mit Live-Counts: Rahmenvertrag, Tarif, Kartentyp, Status,
-  Bindefrist, MultiSIM, VVL-Berechtigung
-- Klickbare Charts – ein Klick auf ein Balken-/Segment filtert die gesamte Sicht
-- Volltextsuche (Rufnummer, Nutzer, Kostenstelle), entfernbare Filter-Chips
-- Smart-Filter für typische Aufgaben, z. B. „VVL fällig ≤ 2 Monate"
+Report und Rechnung werden über die **Rufnummer** verknüpft – so steht neben
+jedem Vertrag, was er im jeweiligen Monat gekostet und verbraucht hat.
+
+## Sichten
+
+Drei Bereiche (Reiter oben):
+
+**Verträge** – die aktuelle Flotte aus den Reports
+- Gesamtsicht über alle Rahmenverträge; pro Rahmenvertrag zählt jeweils der
+  neueste Report, gekündigte Anschlüsse fallen automatisch heraus
+- Faceted-Filter mit Live-Counts (Rahmenvertrag, Tarif, Kartentyp, Status,
+  Bindefrist, MultiSIM, VVL), klickbare Charts, Volltextsuche, Filter-Chips
+- VVL / Bindefrist mit Ampel-Buckets, Bestand & Verteilungen, Verlauf über
+  mehrere Reports
 - Frische-Hinweis: Report-Stände älter als 14 Tage werden als „veraltet"
   markiert (pro Rahmenvertrag + global); es wird nichts ausgeblendet
+- Detail-Ansicht je Vertrag: alle Felder gruppiert, Notizfeld, Druck/PDF;
+  CSV-Export der gefilterten Sicht
 
-**Verträge**
-- Sortierbare Vertrags-Tabelle als Drill-down-Ziel
-- Detail-Ansicht je Vertrag: alle Felder gruppiert, Notizfeld, Druck/PDF
-- CSV-Export der aktuell gefilterten Sicht
+**Rechnungen** – die importierten Monatsrechnungen
+- Mehrfach-Upload; identische Rechnungen werden erkannt und nicht doppelt gezählt
+- Kostensplit je Position: Grundpreis, Optionen und Rabatte einzeln
+  aufgeschlüsselt (z. B. sofort sichtbar, dass eine Daten-Flat 0 € kostet)
+- Datenverbrauch je Rufnummer, Netto/Brutto umschaltbar
 
-**Auswertungen**
-- VVL / Bindefrist mit Ampel-Buckets (abgelaufen, 0–3, 3–12, > 12 Monate)
-- Bestand & Status, Tarif- und Options-Verteilung, MultiSIM
-- Verlauf über mehrere Reports
-
-**Kosten & Controlling**
-- Import von Telekom-Rechnungen als CSV (Positions-Export, enthält den
-  Datenverbrauch je Vertrag); Verknüpfung mit den Verträgen über die Rufnummer
-- Monatskosten und Rabatt je Vertrag (in Tabelle, Facetten und Detail-Ansicht)
-- Kosten je Kostenstelle und Kostentrend über mehrere Rechnungen
-- Netto/Brutto umschaltbar
-
-**Betrieb**
-- Ein Docker-Container, Daten in einem Volume
-- Passwortschutz per Session-Cookie (Einrichtung beim ersten Start)
+**Controlling** – Auswertung über mehrere Monate
+- Monat wählen bzw. durchblättern (Selektor, Vor/Zurück, Klick im Diagramm)
+- Top-Kostentreiber gesamt über alle Rechnungen, eindeutig je Rufnummer
+  (Pools = mehrere Rufnummern) und mit Kostenstellennutzer
+- Kosten je Kostenstelle, GB-Trend, Zuordnungs-Abgleich Report ↔ Rechnung
+- Rufnummer-Monitoring: eine einzelne Rufnummer über die Monate – Kosten,
+  Verbrauch, Tarif/Optionen, Auffälligkeiten. Aus Suche oder Controlling
+  aufrufbar; der gewählte Monat wird in die Detailseite übernommen
 
 ## Schnellstart
 
@@ -58,12 +64,15 @@ Anschließend <http://localhost:8080> öffnen und ein Passwort festlegen.
 
 ## Nutzung
 
-1. **Laden** – einen RVKU-KI-Report (`.xlsx`) oder eine Rechnung (`.csv`)
-   hochladen; der Dateityp wird automatisch erkannt.
-2. **Filtern** – links über die Facetten oder per Klick auf die Diagramme.
-3. **Details** – eine Tabellenzeile öffnen: alle Felder, Kosten, Notiz, Druck/PDF.
-4. **Kosten** – Button oben öffnet Kostenstellen-Auswertung und Kostentrend.
-5. **Exportieren** – „CSV export" gibt die gefilterte Sicht (inkl. Kosten) aus.
+1. **Laden** – einen Report (`.xlsx`) oder eine Rechnung (`.csv`) hochladen
+   (Mehrfachauswahl möglich); der Dateityp wird automatisch erkannt.
+2. **Verträge** – die Flotte über Facetten, Charts oder Suche filtern; eine
+   Zeile öffnen für alle Felder, Kosten, Notiz und Druck/PDF.
+3. **Rechnungen** – die importierten Monatsrechnungen mit aufgeschlüsseltem
+   Kostensplit prüfen.
+4. **Controlling** – Monat wählen, Kostentreiber / Kostenstellen / Trend
+   ansehen und einzelne Rufnummern über die Monate nachverfolgen.
+5. **Verwalten** – „Einstellungen" listet Reports und Rechnungen zum Löschen.
 
 ## Konfiguration
 
@@ -107,23 +116,27 @@ uvicorn app.api:app --reload --port 8080
 pytest -q                          # Tests
 ```
 
-Tests laufen gegen synthetische Fixtures
-(`fixtures/fake_report_generator.py`), nicht gegen reale Reports.
+Tests laufen gegen synthetische Fixtures (`fixtures/`), nicht gegen reale
+Reports oder Rechnungen.
 
 ## Projektstruktur
 
 ```
 app/
-  schema.py     Kanonisches Spaltenschema (eine Quelle der Wahrheit)
-  parser.py     xlsx → normalisierte Datensätze
-  store.py      SQLite-Persistenz (Reports, Verträge, Notizen)
-  analytics.py  Auswertungen (aktuelle Flotte, VVL, Verteilungen, Verlauf)
-  api.py        FastAPI: Auth, Upload, Daten- und Auswertungs-Endpunkte
-  config.py     Pfade & Konfiguration
-web/            Dashboard (HTML, Vanilla JS, Chart.js)
-fixtures/       Synthetischer Report-Generator
-scripts/        Hilfsskripte
-tests/          pytest (parser, store, analytics, api)
+  schema.py          Kanonisches Spaltenschema (eine Quelle der Wahrheit)
+  parser.py          Report-xlsx → normalisierte Datensätze
+  invoice_parser.py  Rechnungs-csv → Positionen je Rufnummer
+  store.py           SQLite-Persistenz (Reports, Rechnungen, Notizen)
+  analytics.py       Auswertungen (Flotte, VVL, Kosten, Controlling, Monitoring)
+  auth.py            Passwort-Hashing (PBKDF2) + Session
+  azure_verify.py    Entra-ID-Token-Validierung (JWKS) fürs SSO
+  api.py             FastAPI: Auth, Upload, Daten- und Auswertungs-Endpunkte
+  config.py          Pfade & Konfiguration
+  version.py         Build-Marker (SHA / Bauzeit)
+web/                 Dashboard (HTML, Vanilla JS, Chart.js)
+fixtures/            Synthetische Report- und Rechnungs-Generatoren
+scripts/             Hilfsskripte (Sanitizer, Git-Hooks)
+tests/               pytest (parser, store, analytics, api)
 ```
 
 ## Tech-Stack
@@ -132,5 +145,5 @@ Python 3.13 · FastAPI · SQLite · Vanilla JS + Chart.js · Docker
 
 ## Daten
 
-Hochgeladene Reports und die Datenbank liegen ausschließlich im `data/`-Volume
-und sind nicht Teil des Repositorys.
+Hochgeladene Reports und Rechnungen sowie die Datenbank liegen ausschließlich
+im `data/`-Volume und sind nicht Teil des Repositorys.

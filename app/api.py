@@ -83,7 +83,7 @@ def _latest_invoice(db: Store):
 
 
 def create_app(secret_key: str | None = None) -> FastAPI:
-    app = FastAPI(title="Telekom BSP Report Analyzer")
+    app = FastAPI(title="Telekom BSP Report & Invoice Analyzer")
     app.add_middleware(
         SessionMiddleware,
         secret_key=secret_key or config.get_secret_key(),
