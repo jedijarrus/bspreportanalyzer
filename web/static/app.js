@@ -589,6 +589,8 @@ function showAuth(mode) {
   document.getElementById("authPw2").hidden = sso || !setup;
   document.getElementById("authSubmit").hidden = sso;
   document.getElementById("authSso").hidden = !sso;
+  document.getElementById("authDevice").hidden = !sso;
+  document.getElementById("deviceBox").hidden = true;
   ["authPw", "authPw2"].forEach((i) => (document.getElementById(i).value = ""));
   document.getElementById("authError").textContent = "";
   if (!sso) document.getElementById("authPw").focus();
@@ -616,6 +618,28 @@ async function submitAuth() {
     showApp();
   } catch (e) { err.textContent = e.message || "Fehler."; }
 }
+// MSAL-Popup-Login (wie im Portal): Frontend holt das Token, Server validiert per JWKS.
+async function msalLogin() {
+  const err = document.getElementById("authError"); err.textContent = "";
+  const az = state.azure || {};
+  if (typeof msal === "undefined" || !az.client_id) {
+    err.textContent = "Microsoft-Login nicht verfügbar — nutze den Gerätecode.";
+    return;
+  }
+  const inst = new msal.PublicClientApplication({
+    auth: { clientId: az.client_id, authority: "https://login.microsoftonline.com/" + az.tenant, redirectUri: window.location.origin },
+    cache: { cacheLocation: "sessionStorage" },
+  });
+  try {
+    await inst.initialize();
+    const resp = await inst.loginPopup({ scopes: ["openid", "profile", "email"] });
+    await api("/api/auth/azure/verify", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ token: resp.idToken }) });
+    showApp();
+  } catch (e) {
+    err.textContent = "Anmeldung fehlgeschlagen: " + (e.message || e);
+  }
+}
+
 let _devTimer = null;
 async function startDevice() {
   const err = document.getElementById("authError"); err.textContent = "";
@@ -650,6 +674,7 @@ async function init() {
       if (el) el.textContent = `Version ${v.sha} · gebaut ${v.built}`;
     }).catch(() => {});
     const st = await api("/api/auth/status");
+    state.azure = st.azure || null;   // client_id/tenant fürs MSAL-Setup
     if (st.authenticated) showApp();
     else if (st.sso) showAuth("sso");
     else if (!st.configured) showAuth("setup");
@@ -992,7 +1017,8 @@ function renderLinie(d) {
 
 // ---- events ---------------------------------------------------------------
 document.getElementById("authSubmit").addEventListener("click", submitAuth);
-document.getElementById("authSso").addEventListener("click", startDevice);
+document.getElementById("authSso").addEventListener("click", msalLogin);
+document.getElementById("authDevice").addEventListener("click", (e) => { e.preventDefault(); startDevice(); });
 ["authPw", "authPw2"].forEach((i) => document.getElementById(i).addEventListener("keydown", (e) => { if (e.key === "Enter") submitAuth(); }));
 
 document.getElementById("logoutBtn").addEventListener("click", async () => {

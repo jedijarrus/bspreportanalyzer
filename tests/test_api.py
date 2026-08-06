@@ -2,7 +2,7 @@
 import pytest
 from fastapi.testclient import TestClient
 
-from app import azure_device, config, store
+from app import azure_device, azure_verify, config, store
 from app.api import create_app, get_store
 
 PW = "geheim-test-123"
@@ -92,6 +92,39 @@ def test_device_flow_falscher_tenant_abgelehnt(azure_app, monkeypatch):
     monkeypatch.setattr(azure_device, "id_token_claims",
                         lambda tok: {"aud": "client-x", "tid": "fremder-tenant"})   # falscher Tenant
     assert c.post("/api/auth/device/poll").status_code == 401
+
+
+def test_azure_verify_setzt_session(azure_app, monkeypatch):
+    app = azure_app[0]
+    monkeypatch.setattr(azure_verify, "validate_token", lambda tok, ten, cid: {"name": "Test", "tid": ten})
+    c = TestClient(app)
+    assert c.post("/api/auth/azure/verify", json={"token": "x"}).status_code == 200
+    assert c.get("/api/reports").status_code == 200   # Session gesetzt
+
+
+def test_azure_verify_ungueltiges_token_401(azure_app, monkeypatch):
+    def boom(*a):
+        raise ValueError("bad")
+    monkeypatch.setattr(azure_verify, "validate_token", boom)
+    assert TestClient(azure_app[0]).post("/api/auth/azure/verify", json={"token": "x"}).status_code == 401
+
+
+def test_validate_token_roundtrip(monkeypatch):
+    import time as _t
+    from authlib.jose import JsonWebKey, jwt
+    key = JsonWebKey.generate_key("RSA", 2048, options={"kid": "k1"}, is_private=True)
+    keyset = JsonWebKey.import_key_set({"keys": [key.as_dict(is_private=False)]})
+    monkeypatch.setattr(azure_verify, "_jwks", lambda tenant: keyset)
+    tenant, cid = "tenant-x", "client-x"
+
+    def mk(tid):
+        return jwt.encode({"alg": "RS256", "kid": "k1"},
+                          {"iss": f"https://login.microsoftonline.com/{tenant}/v2.0", "aud": cid,
+                           "tid": tid, "exp": int(_t.time()) + 3600, "name": "Test"}, key).decode()
+
+    assert azure_verify.validate_token(mk(tenant), tenant, cid)["name"] == "Test"
+    with pytest.raises(Exception):                      # falscher Tenant -> abgelehnt
+        azure_verify.validate_token(mk("anders"), tenant, cid)
 
 
 def test_id_token_claims_decode():

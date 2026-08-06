@@ -86,21 +86,19 @@ Standard: Passwort beim ersten Start setzen (Session-Cookie). Sind die drei
 `GRAPH_*`-Variablen gesetzt, läuft die Anmeldung **ausschließlich über Microsoft
 Entra ID (SSO)** — das Passwort-Login ist dann deaktiviert.
 
-**Login-Ablauf (Device-Code):** Klick auf „Login mit Microsoft" → die App zeigt einen
-Code an → auf `https://microsoft.com/devicelogin` eingeben und mit dem Firmenkonto
-anmelden → fertig. **Kein Redirect-URI und kein HTTPS nötig** (der Server spricht
-direkt mit Microsoft) — läuft also auch hinter `http://host:port`.
+**Login-Ablauf (MSAL / SPA):** Klick auf „Login mit Microsoft" → MSAL-Popup → Anmeldung
+mit dem Firmenkonto → fertig. Das Frontend holt das Token (MSAL.js), der Server validiert
+es per JWKS (Signatur/`iss`/`tid`/`aud`) und setzt die Session. **Braucht HTTPS** (der
+Origin muss als SPA-Redirect registriert sein). Für Umgebungen ohne HTTPS gibt es einen
+Fallback-Link **„oder per Gerätecode anmelden"** (Device-Code, ohne Redirect/HTTPS).
 
-**Azure-Einrichtung:** vorhandene App-Registrierung nutzbar (Tenant-/Client-ID/Secret in
-die `GRAPH_*`-Variablen). In der App-Registrierung unter **Authentication** →
-**„Allow public client flows = Yes"** aktivieren (für den Device-Code-Flow). Der Zugriff
-wird über die Enterprise-App gesteuert (*Assignment required = Yes* + Nutzer/Gruppen
-zuweisen) — nur zugewiesene Nutzer des Tenants kommen rein. **Break-glass:** die
-`GRAPH_*`-Variablen entfernen ⇒ Rückfall auf Passwort-Login.
-
-*(Alternativ existiert auch der klassische Redirect-Flow unter
-`/api/auth/azure/callback` — nur relevant, wenn HTTPS + Web-Redirect-URI vorhanden sind;
-die UI nutzt standardmäßig den Device-Code-Flow.)*
+**Azure-Einrichtung:** vorhandene App-Registrierung nutzbar (Tenant-/Client-ID in die
+`GRAPH_*`-Variablen). Unter **Authentication → „Single-page application (SPA)"** die
+App-URL als Redirect-URI eintragen (z. B. `https://deine-app.example`) und
+`BSP_BASE_URL`/`BSP_HTTPS_ONLY` setzen. Für den Gerätecode-Fallback zusätzlich **„Allow
+public client flows = Yes"**. Der Zugriff wird über die Enterprise-App gesteuert
+(*Assignment required = Yes* + Nutzer/Gruppen zuweisen). **Break-glass:** die `GRAPH_*`-
+Variablen entfernen ⇒ Rückfall auf Passwort-Login.
 
 ## Entwicklung
 
