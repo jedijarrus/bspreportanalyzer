@@ -19,7 +19,8 @@ COPY docker/entrypoint.sh /entrypoint.sh
 # Laufzeit-Daten liegen im Volume /data (DB, Uploads) — nie im Image
 ENV BSP_DATA_DIR=/data \
     BSP_DB_PATH=/data/app.db \
-    BSP_UPLOAD_DIR=/data/uploads
+    BSP_UPLOAD_DIR=/data/uploads \
+    BSP_PORT=8080
 VOLUME ["/data"]
 
 # Non-root-Benutzer anlegen. Der Container startet als root (für chown des
@@ -28,6 +29,8 @@ RUN useradd --create-home --uid 10001 appuser \
     && chmod +x /entrypoint.sh \
     && mkdir -p /data && chown -R appuser:appuser /app
 
+# EXPOSE ist nur Doku; der tatsächliche Port kommt aus BSP_PORT (Default 8080).
 EXPOSE 8080
 ENTRYPOINT ["/entrypoint.sh"]
-CMD ["uvicorn", "app.api:app", "--host", "0.0.0.0", "--port", "8080"]
+# Shell-Form, damit ${BSP_PORT} zur Laufzeit expandiert; exec -> uvicorn wird PID 1
+CMD ["sh", "-c", "exec uvicorn app.api:app --host 0.0.0.0 --port ${BSP_PORT:-8080}"]
