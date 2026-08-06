@@ -16,7 +16,7 @@
       <a class="navtab" data-route="controlling" href="#/controlling">Controlling</a>
     </nav>
     <div class="topbar-mid">
-      <input type="search" id="search" placeholder="Rufnummer, Nutzer, Kostenstelle …" autocomplete="off">
+      <input type="search" id="search" placeholder="Rufnummer, Nutzer, Kostenstelle …" aria-label="Suche: Rufnummer, Nutzer oder Kostenstelle (Enter öffnet Monitoring)" autocomplete="off">
     </div>
     <div class="topbar-actions">
       <span id="staleBadge" class="stale-badge" hidden></span>
@@ -38,8 +38,8 @@
       <div class="brand"><span class="dot"></span> BSP Controlling</div>
       <h2 id="authTitle">Anmelden</h2>
       <p id="authHint" class="hint"></p>
-      <input type="password" id="authPw" placeholder="Passwort" autocomplete="current-password">
-      <input type="password" id="authPw2" placeholder="Passwort wiederholen" autocomplete="new-password" hidden>
+      <input type="password" id="authPw" placeholder="Passwort" aria-label="Passwort" autocomplete="current-password">
+      <input type="password" id="authPw2" placeholder="Passwort wiederholen" aria-label="Passwort wiederholen" autocomplete="new-password" hidden>
       <div id="authError" class="auth-error"></div>
       <button class="btn btn-primary" id="authSubmit">Weiter</button>
     </div>

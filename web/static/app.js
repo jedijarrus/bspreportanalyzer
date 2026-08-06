@@ -250,6 +250,12 @@ function renderHandlungsbedarf() {
   document.getElementById("handlungsbedarf")._cards = cards;
 }
 
+// stabiler Farbindex je Label (Doughnut-Farben sollen nicht mit der Sortierung springen)
+function palIdx(s) {
+  let h = 0;
+  for (const ch of String(s)) h = (h * 31 + ch.charCodeAt(0)) >>> 0;
+  return h % PALETTE.length;
+}
 function renderCharts(rows) {
   const box = document.getElementById("charts");
   if (!box._built) {
@@ -267,11 +273,12 @@ function renderCharts(rows) {
     } else if (cfg.id === "__multisim") {
       labels = MS_ORDER.filter((b) => counts.get(b));
       data = labels.map((b) => counts.get(b));
-      colors = MAGENTA;
+      colors = DATA_COLOR;   // neutral (Magenta nur als Akzent)
     } else {
       const ent = [...counts.entries()].sort((x, y) => y[1] - x[1]).slice(0, 10);
       labels = ent.map((e) => e[0]); data = ent.map((e) => e[1]);
-      colors = cfg.type === "doughnut" ? PALETTE : MAGENTA;
+      // Doughnut: Farbe stabil je Label (nicht je Rang) -> Kategorie wechselt beim Filtern nicht die Farbe
+      colors = cfg.type === "doughnut" ? labels.map((l) => PALETTE[palIdx(l)]) : DATA_COLOR;
     }
     drawChart(`ch_${cfg.id}`, cfg.type, labels, data, cfg.title, colors, cfg.id);
   }
@@ -280,7 +287,9 @@ function renderCharts(rows) {
 function drawChart(id, type, labels, data, title, colors, facetKey) {
   if (charts[id]) charts[id].destroy();
   const ctx = document.getElementById(id);
-  if (!ctx) return;
+  if (!ctx || typeof Chart === "undefined") return;   // CDN nicht geladen -> Rest der Seite bleibt heil
+  ctx.setAttribute("role", "img");
+  if (title) ctx.setAttribute("aria-label", title);
   const isPie = type === "doughnut";
   charts[id] = new Chart(ctx, {
     type,
@@ -331,7 +340,7 @@ function renderGrid(rows) {
     return `<th data-sort="${esc(c)}">${esc(label(c))}${arrow}</th>`;
   }).join("");
   const body = sorted.slice(0, 500).map((c, i) => `<tr data-row="${i}">
-    <td class="detail-cell"><span class="detail-btn">Details ▸</span>${state.notes[noteKey(c)] ? ' <span class="note-mark" title="Notiz vorhanden">📝</span>' : ""}</td>
+    <td class="detail-cell"><span class="detail-btn">Details ▸</span>${state.notes[noteKey(c)] ? ' <span class="note-mark" title="Notiz vorhanden">✎︎</span>' : ""}</td>
     ${GRID_COLS.map((col) => `<td class="${MONEY_COLS.has(col) ? "money" : ""}">${gridCell(c, col)}</td>`).join("")}
   </tr>`).join("");
   t.innerHTML = `<thead><tr>${head}</tr></thead><tbody>${body}</tbody>`;
@@ -381,8 +390,8 @@ function openDrawer(contract) {
        <div><div class="muted">Vertrag${rv}</div><h3>${esc(contract.rufnummer)}</h3></div>
        <div class="drawer-actions">
          <button class="btn" id="drawerVerlauf" title="Monitoring über Monate">Verlauf</button>
-         <button class="btn" id="drawerPrint" title="Drucken / als PDF speichern">🖨 Drucken</button>
-         <button class="btn" id="drawerClose">✕</button>
+         <button class="btn" id="drawerPrint" title="Drucken / als PDF speichern">Drucken</button>
+         <button class="btn" id="drawerClose" aria-label="Schließen">✕</button>
        </div>
      </div>
      <div class="dg note-block">
@@ -471,7 +480,7 @@ function renderStaleBadge() {
   const el = document.getElementById("staleBadge");
   if (!el) return;
   if (state.stale && state.standAlterTage != null) {
-    el.textContent = `⚠ ${state.standAlterTage} Tage alt`;
+    el.textContent = `⚠︎ ${state.standAlterTage} Tage alt`;
     el.title = `Neuester Report ist älter als ${state.maxAgeTage} Tage — es gibt nichts Neueres.`;
     el.hidden = false;
   } else {
@@ -702,7 +711,7 @@ async function renderControlling() {
   state.ctrlInvoiceId = sel.id;
   state.ctrlPeriod = sel.period_start;   // gewählter Monat -> Default beim Öffnen einer Linie
   const selIdx = invoices.indexOf(sel);
-  const monthSel = `<span class="month-nav"><button class="btn btn-xs" id="ctrlPrev"${selIdx <= 0 ? " disabled" : ""}>‹</button><select id="ctrlMonth">${invoices.map((i) => `<option value="${i.id}"${i.id === sel.id ? " selected" : ""}>${fmtDate(i.period_start)}</option>`).join("")}</select><button class="btn btn-xs" id="ctrlNext"${selIdx >= invoices.length - 1 ? " disabled" : ""}>›</button></span>`;
+  const monthSel = `<span class="month-nav"><button class="btn btn-xs" id="ctrlPrev" aria-label="Vorheriger Monat"${selIdx <= 0 ? " disabled" : ""}>‹</button><select id="ctrlMonth" aria-label="Rechnungsmonat">${invoices.map((i) => `<option value="${i.id}"${i.id === sel.id ? " selected" : ""}>${fmtDate(i.period_start)}</option>`).join("")}</select><button class="btn btn-xs" id="ctrlNext" aria-label="Nächster Monat"${selIdx >= invoices.length - 1 ? " disabled" : ""}>›</button></span>`;
   const [d, trend] = await Promise.all([
     api(`/api/invoices/${sel.id}`), api("/api/costs/trend")]);
   const inv = d.invoice, rec = d.reconcile, diff = d.diff;
@@ -796,7 +805,8 @@ function stepCtrl(delta) {
 function drawCtrlChart(id, type, labels, data) {
   if (charts[id]) charts[id].destroy();
   const ctx = document.getElementById(id);
-  if (!ctx) return;
+  if (!ctx || typeof Chart === "undefined") return;
+  ctx.setAttribute("role", "img");
   charts[id] = new Chart(ctx, {
     type,
     data: { labels, datasets: [{ data, backgroundColor: DATA_COLOR, borderColor: DATA_COLOR, borderRadius: 5, tension: .2, fill: false }] },
@@ -820,13 +830,13 @@ async function openLinie(ruf) {
   const panel = document.getElementById("liniePanel");
   if (state.linieRuf === ruf && !panel.hidden) return;
   state.linieRuf = ruf;
-  panel.innerHTML = '<div class="drawer-head"><h3>Linie</h3><button class="btn" id="linieClose">✕</button></div><div class="hint">lade …</div>';
+  panel.innerHTML = '<div class="drawer-head"><h3>Linie</h3><button class="btn" id="linieClose" aria-label="Schließen">✕</button></div><div class="hint">lade …</div>';
   panel.hidden = false;
   document.getElementById("linieOverlay").hidden = false;
   let d;
   try { d = await api("/api/linie/" + encodeURIComponent(ruf)); }
   catch (e) {
-    panel.innerHTML = `<div class="drawer-head"><h3>${esc(ruf)}</h3><button class="btn" id="linieClose">✕</button></div><div class="empty">Keine Daten zu dieser Rufnummer.</div>`;
+    panel.innerHTML = `<div class="drawer-head"><h3>${esc(ruf)}</h3><button class="btn" id="linieClose" aria-label="Schließen">✕</button></div><div class="empty">Keine Daten zu dieser Rufnummer.</div>`;
     return;
   }
   if (state.linieRuf !== ruf) return; // Antwort veraltet (andere Linie geöffnet)
@@ -839,7 +849,8 @@ function fmtVal(val, unit) {
 }
 function drawSeries(id, type, labels, data, unit, onPoint) {
   if (charts[id]) charts[id].destroy();
-  const ctx = document.getElementById(id); if (!ctx) return;
+  const ctx = document.getElementById(id); if (!ctx || typeof Chart === "undefined") return;
+  ctx.setAttribute("role", "img"); ctx.setAttribute("aria-label", "Zeitreihe (" + unit + ")");
   charts[id] = new Chart(ctx, {
     type,
     data: { labels, datasets: [{ data, backgroundColor: DATA_COLOR, borderColor: DATA_COLOR, borderRadius: 5, tension: .25, fill: false }] },
@@ -921,7 +932,7 @@ function renderLinie(d) {
     <div class="drawer-head">
       <div><div class="muted">Rufnummer${rv}</div><h3>${esc(d.rufnummer)}</h3>
         <div class="muted">${esc(sd.kostenstellennutzer || "–")} · ${esc(sd.tarif || "–")} ${vvlBadge}</div></div>
-      <div class="drawer-actions"><button class="btn" id="linieClose">✕</button></div>
+      <div class="drawer-actions"><button class="btn" id="linieClose" aria-label="Schließen">✕</button></div>
     </div>
     <div class="linie-kpis">${kpis.map(([l, val, dd]) => `<div class="linie-kpi"><div class="num">${val}</div><div class="lbl">${l}${dd ? " · " + dd : ""}</div></div>`).join("")}</div>
     <div class="dg"><h4>Verbrauch pro Monat</h4>${v.length ? '<div class="linie-chart"><canvas id="linieGb"></canvas></div>' : '<div class="hint">keine Rechnungsmonate</div>'}</div>
@@ -1103,6 +1114,15 @@ document.getElementById("search").addEventListener("keydown", (e) => {
   if (!hits.length) return;
   const exact = q ? hits.find((c) => String(c.rufnummer || "").replace(/\D/g, "") === q) : null;
   gotoLinie((exact || hits[0]).rufnummer);     // exakte Nummer bevorzugt, sonst erster Treffer
+});
+
+// Escape schließt das oberste offene Overlay
+document.addEventListener("keydown", (e) => {
+  if (e.key !== "Escape") return;
+  if (!document.getElementById("liniePanel").hidden) return closeLinie();
+  if (!document.getElementById("drawer").hidden) return closeDrawer();
+  const so = document.getElementById("settingsOverlay");
+  if (so && !so.hidden) so.hidden = true;
 });
 
 init();
