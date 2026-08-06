@@ -98,6 +98,11 @@ def _upload(client, rows=10, seed=0, name=None):
 
 
 # ---- Auth ----------------------------------------------------------------
+def test_version_endpoint(app_store):
+    v = TestClient(app_store[0]).get("/api/version").json()
+    assert "sha" in v and "built" in v   # ohne Docker-Build: Default "dev"
+
+
 def test_status_initial_unkonfiguriert(app_store):
     app, _ = app_store
     c = TestClient(app)

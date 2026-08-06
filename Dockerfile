@@ -16,6 +16,13 @@ COPY app/ ./app/
 COPY web/ ./web/
 COPY docker/entrypoint.sh /entrypoint.sh
 
+# Build-Marker (Version + Zeit) ins Image. Nach dem Code-COPY, damit die Zeile bei
+# Code-Änderungen frisch neu läuft (Cache invalidiert). BSP_GIT_SHA optional per
+# --build-arg (bzw. docker-compose args) setzen.
+ARG BSP_GIT_SHA=unknown
+RUN printf '%s' "$BSP_GIT_SHA" > /app/BUILD_SHA \
+    && date -u +'%Y-%m-%dT%H:%M:%SZ' > /app/BUILD_TIME
+
 # Laufzeit-Daten liegen im Volume /data (DB, Uploads) — nie im Image
 ENV BSP_DATA_DIR=/data \
     BSP_DB_PATH=/data/app.db \

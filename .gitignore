@@ -53,6 +53,10 @@ Thumbs.db
 scratch_*
 *.log
 
+# Build-Marker (werden nur beim Docker-Build erzeugt)
+/BUILD_SHA
+/BUILD_TIME
+
 # Secrets / lokale Env (Client-Secret!) — nur .env.example ist getrackt
 .env
 !.env.example
