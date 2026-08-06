@@ -89,14 +89,12 @@ Entra ID (SSO)** — das Passwort-Login ist dann deaktiviert.
 **Login-Ablauf (MSAL / SPA):** Klick auf „Login mit Microsoft" → MSAL-Popup → Anmeldung
 mit dem Firmenkonto → fertig. Das Frontend holt das Token (MSAL.js), der Server validiert
 es per JWKS (Signatur/`iss`/`tid`/`aud`) und setzt die Session. **Braucht HTTPS** (der
-Origin muss als SPA-Redirect registriert sein). Für Umgebungen ohne HTTPS gibt es einen
-Fallback-Link **„oder per Gerätecode anmelden"** (Device-Code, ohne Redirect/HTTPS).
+Origin muss als SPA-Redirect registriert sein).
 
 **Azure-Einrichtung:** vorhandene App-Registrierung nutzbar (Tenant-/Client-ID in die
 `GRAPH_*`-Variablen). Unter **Authentication → „Single-page application (SPA)"** die
 App-URL als Redirect-URI eintragen (z. B. `https://deine-app.example`) und
-`BSP_BASE_URL`/`BSP_HTTPS_ONLY` setzen. Für den Gerätecode-Fallback zusätzlich **„Allow
-public client flows = Yes"**. Der Zugriff wird über die Enterprise-App gesteuert
+`BSP_BASE_URL`/`BSP_HTTPS_ONLY` setzen. Der Zugriff wird über die Enterprise-App gesteuert
 (*Assignment required = Yes* + Nutzer/Gruppen zuweisen). **Break-glass:** die `GRAPH_*`-
 Variablen entfernen ⇒ Rückfall auf Passwort-Login.
 
