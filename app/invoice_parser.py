@@ -98,7 +98,9 @@ def _parse_csv(path: Path) -> InvoiceData:
     with open(path, encoding="cp1252", newline="") as f:
         rows = list(csv.reader(f, delimiter=";"))
 
-    header = next((r for r in rows if len(r) >= 34), [""] * 34)
+    header = next((r for r in rows if len(r) >= 34), None)
+    if header is None:  # keine Telekom-Kopfzeile -> defektes/fremdes CSV, nicht als leere Rechnung importieren
+        raise ValueError("Keine gültige Telekom-Rechnungskopfzeile (>=34 Spalten) gefunden.")
     invoice_number = header[0] or None
     issue_date = _iso(header[1])
     kundenkonto = header[5] or None

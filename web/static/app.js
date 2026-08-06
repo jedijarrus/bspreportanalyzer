@@ -105,10 +105,11 @@ async function api(path, opts) {
   if (!res.ok) { let m = res.statusText; try { m = (await res.json()).detail || m; } catch (e) {} throw new Error(m); }
   return res.status === 204 ? null : res.json();
 }
-function toast(msg, isErr) {
+function toast(msg, isErr, dur = 3200) {
   const t = document.getElementById("toast");
   t.textContent = msg; t.className = "toast show" + (isErr ? " err" : "");
-  setTimeout(() => (t.className = "toast"), 3200);
+  clearTimeout(t._to);
+  t._to = setTimeout(() => (t.className = "toast"), dur);
 }
 function bucket(iso) {
   if (!iso) return "ohne";
@@ -226,7 +227,7 @@ function renderUsageBar() {
         <b>${a.verbraucht_gb.toLocaleString("de-DE")} / ${a.gebucht_gb.toLocaleString("de-DE")} GB · ${p} %</b>
       </div>
       <div class="meter" title="${p}% des gebuchten Volumens genutzt"><div class="meter-fill ${cls}" style="width:${Math.min(100, p)}%"></div></div>
-      <div class="usage-foot muted">${a.unter_25} Verträge &lt; 25 % genutzt (Downgrade-Potenzial) · ${a.ueber_100} Overage (&gt; 100 %)</div>
+      <div class="usage-foot muted">${a.unter_25} Verträge &lt; 25 % genutzt · ${a.ueber_100} über gebuchtem Volumen</div>
     </div>`;
 }
 
@@ -682,7 +683,7 @@ async function renderRechnung(pane, id) {
         <div class="card2"><h3>Datenauslastung</h3>
           <div class="dl"><span>Gesamt-Auslastung</span><b>${au.auslastung_pct}%</b></div>
           <div class="dl"><span>gebucht / verbraucht</span><b>${au.gebucht_gb.toLocaleString("de-DE")} / ${au.verbraucht_gb.toLocaleString("de-DE")} GB</b></div>
-          <div class="dl"><span>Downgrade-Kandidaten (&lt; 25%)</span><b class="warn">${au.unter_25}</b></div>
+          <div class="dl"><span>&lt; 25 % genutzt</span><b class="warn">${au.unter_25}</b></div>
           <div class="dl"><span>Overage (&gt; 100%)</span><b>${au.ueber_100}</b></div>
         </div>
       </div>
@@ -951,25 +952,32 @@ document.getElementById("logoutBtn").addEventListener("click", async () => {
 document.getElementById("search").addEventListener("input", (e) => { state.search = e.target.value.trim(); if (state.route === "vertraege") render(); });
 
 document.getElementById("fileInput").addEventListener("change", async (e) => {
-  const files = Array.from(e.target.files || []);
+  const input = e.target;
+  const files = Array.from(input.files || []);
   if (!files.length) return;
-  let rep = 0, inv = 0, dup = 0, err = 0;
-  for (const file of files) {                      // mehrere Dateien nacheinander
+  let rep = 0, inv = 0, dup = 0;
+  const errs = [];
+  input.disabled = true;                            // kein Doppel-Upload während des Ladens
+  for (let i = 0; i < files.length; i++) {
+    const file = files[i];
+    if (files.length > 1) toast(`Lade ${i + 1}/${files.length} … (${file.name})`, false, 60000);
     const isInvoice = /\.csv$/i.test(file.name);
     const fd = new FormData(); fd.append("file", file);
     try {
       const r = await api(isInvoice ? "/api/invoices" : "/api/reports", { method: "POST", body: fd });
       if (r.duplicate) dup++; else if (isInvoice) inv++; else rep++;
-    } catch (_) { err++; }
+    } catch (err) { errs.push(`${file.name}: ${err.message}`); }   // Grund je Datei merken
   }
+  input.disabled = false;
   const parts = [];
   if (rep) parts.push(`${rep} Report${rep > 1 ? "s" : ""}`);
   if (inv) parts.push(`${inv} Rechnung${inv > 1 ? "en" : ""} geladen`);
   if (dup) parts.push(`${dup} Duplikat${dup > 1 ? "e" : ""} übersprungen`);
-  if (err) parts.push(`${err} Fehler`);
-  toast(parts.length ? parts.join(" · ") : "Nichts geladen", err > 0 && !rep && !inv);
+  const summary = parts.join(" · ") || (errs.length ? "" : "Nichts geladen");
+  const msg = errs.length ? [summary, `${errs.length} Fehler: ${errs.join(" · ")}`].filter(Boolean).join(" — ") : summary;
+  toast(msg, errs.length > 0 && !rep && !inv, errs.length ? 8000 : 3200);
   await loadData();
-  e.target.value = "";
+  input.value = "";
 });
 
 // Netto/Brutto-Umschalter
