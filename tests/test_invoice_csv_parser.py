@@ -65,3 +65,14 @@ def test_csv_kopfzeile_nicht_als_datenzeile(tmp_path):
     rufs = {l["rufnummer"] for l in inv.lines if l.get("rufnummer")}
     assert "0099999999" not in rufs   # Kundenkonto NICHT als Rufnummer
     assert "0151 1" in rufs           # echte Detailzeile bleibt erhalten
+
+
+def test_csv_ohne_kopfzeile_wird_abgelehnt(tmp_path):
+    """Defektes/fremdes CSV (keine 34-spaltige Kopfzeile) -> ValueError statt leerer Rechnung."""
+    import csv
+    import pytest
+    p = tmp_path / "kaputt.csv"
+    with open(p, "w", encoding="cp1252", newline="") as f:
+        csv.writer(f, delimiter=";").writerows([["a", "b", "c"], ["1", "2", "3"]])
+    with pytest.raises(ValueError):
+        invoice_parser.parse_invoice(p)

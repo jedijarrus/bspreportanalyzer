@@ -230,6 +230,13 @@ def test_invoice_upload_dedup(client):
     assert len(client.get("/api/invoices").json()) == 1  # nicht doppelt gespeichert
 
 
+def test_invoice_upload_defekt_abgelehnt(client):
+    # CSV ohne Telekom-Kopfzeile -> 400, nicht als leere Rechnung importiert
+    r = client.post("/api/invoices", files={"file": ("kaputt.csv", b"a;b;c\n1;2;3\n", "text/csv")})
+    assert r.status_code == 400
+    assert client.get("/api/invoices").json() == []
+
+
 def test_invoices_liste(client):
     _upload_invoice(client, rufnummern=["0151A"])
     assert len(client.get("/api/invoices").json()) == 1
