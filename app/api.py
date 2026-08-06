@@ -21,7 +21,7 @@ from pydantic import BaseModel
 from starlette.middleware.sessions import SessionMiddleware
 from starlette.requests import Request
 
-from app import analytics, auth, azure_device, config, invoice_parser, parser, version
+from app import analytics, auth, azure_device, azure_verify, config, invoice_parser, parser, version
 from app.store import Store
 
 WEB_DIR = Path(__file__).resolve().parents[1] / "web"
@@ -36,6 +36,10 @@ VVL_VIEW_FIELDS = (
 
 class PasswordBody(BaseModel):
     password: str
+
+
+class TokenBody(BaseModel):
+    token: str
 
 
 def _azure_redirect_uri(request: Request) -> str:
@@ -126,10 +130,13 @@ def create_app(secret_key: str | None = None) -> FastAPI:
     @app.get("/api/auth/status")
     def auth_status(request: Request, db: Store = Depends(get_store)):
         sso = config.azure_configured()
+        s = config.azure_settings() if sso else {}
         return {
             "configured": sso or db.get_setting(PW_HASH_KEY) is not None,
             "authenticated": bool(request.session.get("auth")),
             "sso": sso,
+            # client_id/tenant sind öffentliche IDs (keine Secrets) -> fürs MSAL-Setup im Frontend
+            "azure": {"client_id": s.get("client_id"), "tenant": s.get("tenant")} if sso else None,
         }
 
     @app.post("/api/auth/setup", status_code=201)
@@ -225,6 +232,20 @@ def create_app(secret_key: str | None = None) -> FastAPI:
             return {"status": "pending"}
         request.session.pop("device_code", None)   # expired/declined -> Flow beenden
         return {"status": "error", "error": err or "unbekannt"}
+
+    # ---- MSAL-Login: Frontend holt Token (Popup/Redirect), Server validiert ---
+    @app.post("/api/auth/azure/verify")
+    def azure_verify_ep(body: TokenBody, request: Request):
+        if not config.azure_configured():
+            raise HTTPException(404, "SSO nicht konfiguriert.")
+        s = config.azure_settings()
+        try:
+            claims = azure_verify.validate_token(body.token, s["tenant"], s["client_id"])
+        except Exception:
+            raise HTTPException(401, "Token ungültig.")
+        request.session["auth"] = True
+        request.session["user"] = claims.get("name") or claims.get("preferred_username") or claims.get("upn")
+        return {"status": "ok"}
 
     # ---- Report-Verwaltung ---------------------------------------------
     @app.post("/api/reports", status_code=201, dependencies=[Depends(require_auth)])
