@@ -19,6 +19,10 @@ MAX_UPLOAD_BYTES = int(os.environ.get("BSP_MAX_UPLOAD_MB", "25")) * 1024 * 1024
 # (nur Warn-Signal, es wird nichts ausgeblendet). Default 14 Tage.
 MAX_REPORT_AGE_DAYS = int(os.environ.get("BSP_MAX_REPORT_AGE_DAYS", "14"))
 
+# Session-Cookie nur über HTTPS ausliefern (Secure-Flag). Hinter einem TLS-Proxy
+# auf 1/true setzen; Default aus, da lokal via HTTP betrieben.
+HTTPS_ONLY = os.environ.get("BSP_HTTPS_ONLY", "").strip().lower() in ("1", "true", "yes", "on")
+
 
 def get_secret_key() -> str:
     """Secret für signierte Session-Cookies.

@@ -75,8 +75,9 @@ def create_app(secret_key: str | None = None) -> FastAPI:
         SessionMiddleware,
         secret_key=secret_key or config.get_secret_key(),
         same_site="lax",
-        https_only=False,  # lokales HTTP; hinter HTTPS-Proxy auf True setzen
+        https_only=config.HTTPS_ONLY,  # via BSP_HTTPS_ONLY setzen, wenn hinter TLS-Proxy
     )
+    app.state.login_fails = {"count": 0, "until": 0.0}  # simple Brute-Force-Bremse
     templates = Jinja2Templates(directory=str(WEB_DIR / "templates"))
     static_dir = WEB_DIR / "static"
     if static_dir.exists():
@@ -107,9 +108,17 @@ def create_app(secret_key: str | None = None) -> FastAPI:
 
     @app.post("/api/auth/login")
     def auth_login(body: PasswordBody, request: Request, db: Store = Depends(get_store)):
+        st = request.app.state.login_fails
+        now = dt.datetime.now().timestamp()
+        if st["until"] > now:
+            raise HTTPException(429, "Zu viele Fehlversuche. Bitte kurz warten.")
         stored = db.get_setting(PW_HASH_KEY)
         if not stored or not auth.verify_password(body.password, stored):
+            st["count"] += 1
+            if st["count"] >= 5:                 # nach 5 Fehlversuchen 30 s sperren
+                st["until"], st["count"] = now + 30.0, 0
             raise HTTPException(401, "Falsches Passwort.")
+        st["count"] = 0
         request.session["auth"] = True
         return {"status": "ok"}
 
@@ -181,7 +190,14 @@ def create_app(secret_key: str | None = None) -> FastAPI:
         if latest:
             lines = db.get_invoice_lines(latest["id"])
             # Kosten je Rufnummer, umgeschlüsselt auf normalisierte Rufnummer (Join)
-            kmap = {norm(k): v for k, v in analytics.kosten_je_rufnummer(lines).items()}
+            kmap = {}
+            for k, v in analytics.kosten_je_rufnummer(lines).items():
+                nk = norm(k)
+                if nk in kmap:  # zwei Schreibweisen derselben Nummer -> Kosten addieren, nicht ueberschreiben
+                    for f, val in v.items():
+                        kmap[nk][f] = kmap[nk].get(f, 0.0) + val
+                else:
+                    kmap[nk] = dict(v)
             auslastung = analytics.datenauslastung(lines)
             # Per-Vertrag-Datenauslastung (nur mit CSV-Rechnung: Datenzeilen tragen Rufnummer)
             util_map = {norm(l["rufnummer"]): l for l in lines
@@ -278,7 +294,7 @@ def create_app(secret_key: str | None = None) -> FastAPI:
             "datenauslastung": analytics.datenauslastung(lines),
             "auslastung_liste": analytics.datenauslastung_liste(lines),
             "je_rahmenvertrag": sorted(rv_agg.values(), key=lambda x: -x["netto"]),
-            "top_treiber": [{"rufnummer": r, "netto": v["netto"], "rabatt": v["rabatt"],
+            "top_treiber": [{"rufnummer": r, "netto": round(v["netto"], 2), "rabatt": round(v["rabatt"], 2),
                              "nutzer": (cmap.get(norm(r)) or {}).get("kostenstellennutzer")}
                             for r, v in top],
             "diff": diff,
