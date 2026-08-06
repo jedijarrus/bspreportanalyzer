@@ -75,13 +75,18 @@ function moneyNum(v) { return v == null ? 0 : (state.brutto ? v * state.bruttoFa
 function money(v) {
   return v == null ? "–" : moneyNum(v).toLocaleString("de-DE", { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + " €";
 }
+// Roh-Euro OHNE Netto/Brutto-Skalierung — für echte, gespeicherte Rechnungsbeträge
+// (total_net/tax/gross), die exakt der Telekom-Rechnung entsprechen müssen.
+function fmtEur(v) {
+  return v == null ? "–" : v.toLocaleString("de-DE", { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + " €";
+}
 function pct(v, dec = 0) { return (v > 0 ? "+" : "") + v.toFixed(dec) + " %"; }
 // Δ-Anzeige: Kostensteigerung = amber/rot (Achtung), Senkung = grün
-function deltaBadge(v, pctVal) {
+function deltaBadge(v, pctVal, fmt = money) {
   if (v == null) return "–";
   const cls = v > 0 ? "delta-up" : v < 0 ? "delta-down" : "";
   const arrow = v > 0 ? "▲" : v < 0 ? "▼" : "";
-  return `<span class="delta ${cls}">${arrow} ${money(Math.abs(v))}${pctVal != null ? " (" + pct(pctVal) + ")" : ""}</span>`;
+  return `<span class="delta ${cls}">${arrow} ${fmt(Math.abs(v))}${pctVal != null ? " (" + pct(pctVal) + ")" : ""}</span>`;
 }
 function noteKey(c) { return (c.rahmenvertrag || "") + "|" + (c.rufnummer || ""); }
 const charts = {};
@@ -505,6 +510,8 @@ function renderBase(name, param) {
     document.getElementById("view-" + v).hidden = v !== name);
   // Suche/Netto-Brutto nur in Verträgen relevant -> Suche ausblenden ausserhalb
   document.querySelector(".topbar-mid").style.visibility = (name === "vertraege" || name === "controlling") ? "visible" : "hidden";
+  // Netto/Brutto-Umschalter auf Rechnungen ausblenden — dort gelten die echten Rechnungsbeträge (fmtEur)
+  document.getElementById("netbrutto").style.visibility = name === "rechnungen" ? "hidden" : "visible";
   if (name === "vertraege") renderVertraege();
   else if (name === "rechnungen") renderRechnungen(param);
   else if (name === "controlling") renderControlling();
@@ -624,11 +631,11 @@ async function renderRechnungen(param) {
             <td><strong>${fmtDate(r.period_start)}</strong></td>
             <td>${esc(r.invoice_number || "")}</td>
             <td>${fmtDate(r.issue_date)}</td>
-            <td class="money">${money(r.total_net)}</td>
-            <td class="money">${money(r.total_tax)}</td>
-            <td class="money">${money(r.total_gross)}</td>
+            <td class="money">${fmtEur(r.total_net)}</td>
+            <td class="money">${fmtEur(r.total_tax)}</td>
+            <td class="money">${fmtEur(r.total_gross)}</td>
             <td class="num">${r.line_count}</td>
-            <td class="money">${delta == null ? "–" : deltaBadge(delta)}</td>
+            <td class="money">${delta == null ? "–" : deltaBadge(delta, null, fmtEur)}</td>
           </tr>`).join("")}</tbody>
       </table></div>
     </div>`;
@@ -640,12 +647,12 @@ async function renderRechnung(pane, id) {
   const inv = d.invoice, rec = d.reconcile, diff = d.diff;
   const dNet = diff ? diff.gesamt.delta : null;
   const dPct = diff && diff.gesamt.alt ? (dNet / diff.gesamt.alt) * 100 : null;
-  const dl = (l, v, cls = "") => `<div class="dl ${cls}"><span>${esc(l)}</span><b>${money(v)}</b></div>`;
+  const dl = (l, v, cls = "") => `<div class="dl ${cls}"><span>${esc(l)}</span><b>${fmtEur(v)}</b></div>`;
   const katSum = d.kategorie.reduce((a, [, v]) => a + Math.abs(v), 0) || 1;
   const anom = diff ? [
     diff.neu.length ? `<div class="dl"><span>neu berechnet</span><b>${diff.neu.length}</b></div>` : "",
     diff.weggefallen.length ? `<div class="dl"><span>weggefallen</span><b>${diff.weggefallen.length}</b></div>` : "",
-    ...diff.je_rufnummer.slice(0, 5).filter((x) => x.delta).map((x) => `<div class="dl"><span>${esc(x.rufnummer)}</span><b>${deltaBadge(x.delta)}</b></div>`),
+    ...diff.je_rufnummer.slice(0, 5).filter((x) => x.delta).map((x) => `<div class="dl"><span>${esc(x.rufnummer)}</span><b>${deltaBadge(x.delta, null, fmtEur)}</b></div>`),
   ].join("") : '<span class="hint">keine Vorrechnung</span>';
   const au = d.datenauslastung;
   pane.innerHTML = `
@@ -659,18 +666,18 @@ async function renderRechnung(pane, id) {
           ${dl("Netto", inv.total_net)}
           ${dl("USt", inv.total_tax)}
           ${dl("Brutto", inv.total_gross, "total")}
-          <div class="dl rec"><span>Zuordnung</span><b>${money(rec.zugeordnet)} · Rest ${money(rec.nicht_zugeordnet)}</b></div>
+          <div class="dl rec"><span>Zuordnung</span><b>${fmtEur(rec.zugeordnet)} · Rest ${fmtEur(rec.nicht_zugeordnet)}</b></div>
         </div>
         <div class="inv-delta ${dNet > 0 ? "delta-up" : dNet < 0 ? "delta-down" : ""}">
           <div class="muted">Δ zum Vormonat${d.prev_period ? " (" + fmtDate(d.prev_period) + ")" : ""}</div>
-          <div class="delta-big">${dNet == null ? "–" : (dNet > 0 ? "+" : "") + money(dNet)}</div>
+          <div class="delta-big">${dNet == null ? "–" : (dNet > 0 ? "+" : "") + fmtEur(dNet)}</div>
           ${dPct != null ? `<div class="muted">${pct(dPct, 1)}</div>` : ""}
         </div>
       </div>
       <div class="panel-grid">
-        <div class="card2"><h3>Nach Kategorie</h3>${d.kategorie.map(([k, v]) => `<div class="dl"><span><span class="cat cat-${esc(k)}">${esc(k)}</span></span><b>${money(v)} <span class="muted">${Math.round(Math.abs(v) / katSum * 100)}%</span></b></div>`).join("")}</div>
-        <div class="card2"><h3>Nach Rahmenvertrag</h3>${(d.je_rahmenvertrag || []).map((x) => `<div class="dl"><span>${esc(x.rahmenvertrag)} <span class="muted">· ${x.anzahl}</span></span><b>${money(x.netto)}</b></div>`).join("")}</div>
-        <div class="card2"><h3>Top-Kostentreiber <span class="muted">(Mitarbeiter)</span></h3>${d.top_treiber.slice(0, 8).map((t) => `<div class="dl"><span>${esc(t.nutzer || t.rufnummer)}</span><b>${money(t.netto)}</b></div>`).join("")}</div>
+        <div class="card2"><h3>Nach Kategorie</h3>${d.kategorie.map(([k, v]) => `<div class="dl"><span><span class="cat cat-${esc(k)}">${esc(k)}</span></span><b>${fmtEur(v)} <span class="muted">${Math.round(Math.abs(v) / katSum * 100)}%</span></b></div>`).join("")}</div>
+        <div class="card2"><h3>Nach Rahmenvertrag</h3>${(d.je_rahmenvertrag || []).map((x) => `<div class="dl"><span>${esc(x.rahmenvertrag)} <span class="muted">· ${x.anzahl}</span></span><b>${fmtEur(x.netto)}</b></div>`).join("")}</div>
+        <div class="card2"><h3>Top-Kostentreiber <span class="muted">(Mitarbeiter)</span></h3>${d.top_treiber.slice(0, 8).map((t) => `<div class="dl"><span>${esc(t.nutzer || t.rufnummer)}</span><b>${fmtEur(t.netto)}</b></div>`).join("")}</div>
         <div class="card2"><h3>Auffälligkeiten (Δ)</h3>${anom}</div>
         <div class="card2"><h3>Datenauslastung</h3>
           <div class="dl"><span>Gesamt-Auslastung</span><b>${au.auslastung_pct}%</b></div>
@@ -706,7 +713,7 @@ async function renderControlling() {
   const gbPrev = gb.length > 1 ? gb[gb.length - 2].gb : null;
   const dGb = (gbLatest != null && gbPrev != null) ? gbLatest - gbPrev : null;
   const kpis = [
-    ["Netto Monat", money(inv.total_net), dNet != null ? deltaBadge(dNet, dPct) : ""],
+    ["Netto Monat", fmtEur(inv.total_net), dNet != null ? deltaBadge(dNet, dPct, fmtEur) : ""],
     ["Ø je Vertrag", money(inv.total_net / nSim), ""],
     ["Verträge", String(state.all.length), ""],
     ["Zuordnung", `${rec.anzahl_rufnummern} / ${state.all.length}`, ""],

@@ -54,10 +54,24 @@ def current_fleet(rows: list[dict]) -> list[dict]:
         key = (r.get("_report_date") or "", r.get("_report_id") or 0)
         if rv not in latest or key > latest[rv]:
             latest[rv] = key
-    return [
+    union = [
         r for r in rows
         if (r.get("_report_date") or "", r.get("_report_id") or 0) == latest.get(r.get("rahmenvertrag"))
     ]
+    # Dedup über die RV-Grenze: wechselt eine Nummer den Rahmenvertrag, steht sie im
+    # letzten Report des ALTEN RV UND im neuen des neuen RV. Je normalisierter Rufnummer
+    # den neuesten (_report_date, _report_id) behalten. Zeilen ohne Rufnummer bleiben alle.
+    best: dict[str, tuple] = {}
+    passthrough: list[dict] = []
+    for r in union:
+        nk = normalize_rufnummer(r.get("rufnummer"))
+        if not nk:
+            passthrough.append(r)
+            continue
+        key = (r.get("_report_date") or "", r.get("_report_id") or 0)
+        if nk not in best or key > best[nk][0]:
+            best[nk] = (key, r)
+    return [r for _, r in best.values()] + passthrough
 
 
 def fleet_freshness(fleet: list[dict], today: dt.date, max_age_days: int = 14) -> dict:

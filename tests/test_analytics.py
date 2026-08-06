@@ -30,9 +30,9 @@ def _r(rv, ruf, date, rid, **kw):
 # ---- Aktuelle Flotte (Vereinigung neuester Report je Rahmenvertrag) ------
 def test_current_fleet_vereint_verschiedene_rahmenvertraege():
     rows = [
-        _r("RV-A", "A1", "2026-06-01", 1),
-        _r("RV-B", "B1", "2026-06-02", 2),
-        _r("RV-B", "B2", "2026-06-02", 2),
+        _r("RV-A", "0151 1", "2026-06-01", 1),
+        _r("RV-B", "0170 1", "2026-06-02", 2),
+        _r("RV-B", "0170 2", "2026-06-02", 2),
     ]
     fleet = analytics.current_fleet(rows)
     assert len(fleet) == 3
@@ -58,6 +58,22 @@ def test_current_fleet_gekuendigte_linie_verschwindet():
     ]
     fleet = analytics.current_fleet(rows)
     assert {c["rufnummer"] for c in fleet} == {"A1"}
+
+
+def test_current_fleet_dedupe_bei_rahmenvertrag_wechsel():
+    # Nummer von RV-A (alter Report) nach RV-B (neuer Report) migriert -> nur EINMAL, neuer Stand
+    rows = [
+        _r("RV-A", "+49-151-1", "2026-06-01", 1, tarif="Alt"),   # alter RV-Report bleibt „aktuell" für RV-A
+        _r("RV-B", "0151 1", "2026-07-01", 2, tarif="Neu"),      # dieselbe Nummer, gewechselt, neuer Report
+        _r("RV-B", "B2", "2026-07-01", 2),
+    ]
+    fleet = analytics.current_fleet(rows)
+    nz = analytics.normalize_rufnummer
+    nums = [nz(c["rufnummer"]) for c in fleet]
+    assert nums.count(nz("0151-1")) == 1                          # nicht doppelt
+    c = next(c for c in fleet if nz(c["rufnummer"]) == nz("0151-1"))
+    assert c["tarif"] == "Neu" and c["rahmenvertrag"] == "RV-B"   # neuester Stand gewinnt
+    assert len(fleet) == 2
 
 
 def test_current_fleet_leer():
