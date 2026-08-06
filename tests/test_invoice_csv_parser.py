@@ -46,3 +46,22 @@ def test_csv_kosten_je_rufnummer_stimmt(make_invoice_csv):
     inv = invoice_parser.parse_invoice(make_invoice_csv(rufnummern=["0151A"], n=1))
     k = analytics.kosten_je_rufnummer(inv.lines)
     assert "0151A" in k and k["0151A"]["netto"] > 0
+
+
+def test_csv_kopfzeile_nicht_als_datenzeile(tmp_path):
+    """Die 34-spaltige Kopfzeile darf nicht als Detailzeile geparst werden
+    (sonst Phantom-Rufnummer = Kundenkonto, wie in echten Telekom-CSV)."""
+    import csv
+    head = [""] * 34
+    head[0], head[5], head[12] = "230000000001", "0099999999", "Telekom Deutschland GmbH"
+    head[6], head[7] = "01.06.2026", "30.06.2026"
+    head[17] = "DE93ZZZ00000000000"  # Gläubiger-ID, keine Zahl
+    row = [""] * 22
+    row[5], row[8], row[10], row[16], row[17] = "0151 1", "Grundpreise", "Business Mobil L", "19", "69,71"
+    p = tmp_path / "Rechnung_kopf.csv"
+    with open(p, "w", encoding="cp1252", newline="") as f:
+        csv.writer(f, delimiter=";").writerows([head, row])
+    inv = invoice_parser.parse_invoice(p)
+    rufs = {l["rufnummer"] for l in inv.lines if l.get("rufnummer")}
+    assert "0099999999" not in rufs   # Kundenkonto NICHT als Rufnummer
+    assert "0151 1" in rufs           # echte Detailzeile bleibt erhalten

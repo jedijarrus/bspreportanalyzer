@@ -109,8 +109,8 @@ def _parse_csv(path: Path) -> InvoiceData:
     data_by_ruf: dict[str, dict[str, Any]] = {}
 
     for r in rows:
-        if len(r) < 18:
-            continue
+        if len(r) < 18 or len(r) >= 34:
+            continue  # Zwischensummen (<18) und die Kopfzeile (>=34 Spalten) überspringen
         rufnummer = (r[5] or "").strip() or None
         kostenstelle = (r[3] or "").strip() or None
         nutzer = (r[4] or "").strip() or None
