@@ -71,6 +71,7 @@ Steuerung über Umgebungsvariablen (z. B. in `docker-compose.yml`):
 
 | Variable | Default | Bedeutung |
 |---|---|---|
+| `BSP_PORT` | `8080` | Port, auf dem der Container lauscht (Docker: mappt auch das Port-Binding) |
 | `BSP_DATA_DIR` | `data` | Verzeichnis für Datenbank, Uploads und Exporte |
 | `BSP_MAX_UPLOAD_MB` | `25` | maximale Upload-Größe in MB |
 | `BSP_MAX_REPORT_AGE_DAYS` | `14` | ab welchem Alter ein Report-Stand als „veraltet" markiert wird |
