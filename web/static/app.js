@@ -594,6 +594,7 @@ function showAuth(mode) {
   if (!sso) document.getElementById("authPw").focus();
 }
 function showApp() {
+  clearInterval(_devTimer);
   document.getElementById("authOverlay").hidden = true;
   document.getElementById("appMain").hidden = false;
   ["logoutBtn", "settingsBtn", "netbrutto", "mainnav"].forEach((i) => (document.getElementById(i).hidden = false));
@@ -614,6 +615,33 @@ async function submitAuth() {
     }
     showApp();
   } catch (e) { err.textContent = e.message || "Fehler."; }
+}
+let _devTimer = null;
+async function startDevice() {
+  const err = document.getElementById("authError"); err.textContent = "";
+  document.getElementById("authSso").hidden = true;
+  const box = document.getElementById("deviceBox");
+  box.hidden = false; box.innerHTML = '<div class="hint">starte …</div>';
+  let d;
+  try { d = await api("/api/auth/device/start", { method: "POST" }); }
+  catch (e) { box.hidden = true; document.getElementById("authSso").hidden = false; err.textContent = e.message || "Fehler."; return; }
+  box.innerHTML = `
+    <div class="dev-step">1. Öffnen: <a href="${esc(d.verification_uri)}" target="_blank" rel="noopener">${esc(d.verification_uri)}</a></div>
+    <div class="dev-step">2. Diesen Code eingeben:</div>
+    <div class="dev-code">${esc(d.user_code)}</div>
+    <div class="dev-wait">warte auf Anmeldung …</div>`;
+  const iv = Math.max(2, d.interval || 5) * 1000;
+  clearInterval(_devTimer);
+  _devTimer = setInterval(async () => {
+    let r;
+    try { r = await api("/api/auth/device/poll", { method: "POST" }); } catch (e) { return; }
+    if (r.status === "authenticated") { clearInterval(_devTimer); showApp(); }
+    else if (r.status === "error" || r.status === "none") {
+      clearInterval(_devTimer);
+      box.hidden = true; document.getElementById("authSso").hidden = false;
+      err.textContent = "Anmeldung abgebrochen/abgelaufen — erneut versuchen.";
+    }
+  }, iv);
 }
 async function init() {
   try {
@@ -964,6 +992,7 @@ function renderLinie(d) {
 
 // ---- events ---------------------------------------------------------------
 document.getElementById("authSubmit").addEventListener("click", submitAuth);
+document.getElementById("authSso").addEventListener("click", startDevice);
 ["authPw", "authPw2"].forEach((i) => document.getElementById(i).addEventListener("keydown", (e) => { if (e.key === "Enter") submitAuth(); }));
 
 document.getElementById("logoutBtn").addEventListener("click", async () => {

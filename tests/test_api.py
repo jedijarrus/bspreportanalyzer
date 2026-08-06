@@ -2,7 +2,7 @@
 import pytest
 from fastapi.testclient import TestClient
 
-from app import config, store
+from app import azure_device, config, store
 from app.api import create_app, get_store
 
 PW = "geheim-test-123"
@@ -57,6 +57,47 @@ def test_password_login_deaktiviert_bei_sso(azure_app):
 
 def test_azure_login_404_ohne_sso(app_store):
     assert TestClient(app_store[0]).get("/api/auth/azure/login").status_code == 404
+
+
+def test_device_start_404_ohne_sso(app_store):
+    assert TestClient(app_store[0]).post("/api/auth/device/start").status_code == 404
+
+
+def test_device_flow_pending_dann_authenticated(azure_app, monkeypatch):
+    app = azure_app[0]
+    monkeypatch.setattr(azure_device, "device_start",
+                        lambda t, c: {"device_code": "DC", "user_code": "ABCD-EFGH",
+                                      "verification_uri": "https://microsoft.com/devicelogin",
+                                      "interval": 1, "expires_in": 900})
+    c = TestClient(app)
+    r = c.post("/api/auth/device/start").json()
+    assert r["user_code"] == "ABCD-EFGH" and "device_code" not in r   # device_code bleibt serverseitig
+    # noch nicht bestätigt
+    monkeypatch.setattr(azure_device, "device_poll", lambda t, ci, dc: (400, {"error": "authorization_pending"}))
+    assert c.post("/api/auth/device/poll").json()["status"] == "pending"
+    # bestätigt -> Token, Session gesetzt
+    monkeypatch.setattr(azure_device, "device_poll", lambda t, ci, dc: (200, {"id_token": "x"}))
+    monkeypatch.setattr(azure_device, "id_token_claims",
+                        lambda tok: {"aud": "client-x", "tid": "tenant-x", "name": "Test"})
+    assert c.post("/api/auth/device/poll").json()["status"] == "authenticated"
+    assert c.get("/api/reports").status_code == 200
+
+
+def test_device_flow_falscher_tenant_abgelehnt(azure_app, monkeypatch):
+    app = azure_app[0]
+    monkeypatch.setattr(azure_device, "device_start", lambda t, c: {"device_code": "DC", "user_code": "X"})
+    c = TestClient(app)
+    c.post("/api/auth/device/start")
+    monkeypatch.setattr(azure_device, "device_poll", lambda t, ci, dc: (200, {"id_token": "x"}))
+    monkeypatch.setattr(azure_device, "id_token_claims",
+                        lambda tok: {"aud": "client-x", "tid": "fremder-tenant"})   # falscher Tenant
+    assert c.post("/api/auth/device/poll").status_code == 401
+
+
+def test_id_token_claims_decode():
+    import base64, json
+    payload = base64.urlsafe_b64encode(json.dumps({"aud": "x", "name": "Y"}).encode()).rstrip(b"=").decode()
+    assert azure_device.id_token_claims(f"header.{payload}.sig")["name"] == "Y"
 
 
 def test_azure_callback_setzt_session(azure_app):
