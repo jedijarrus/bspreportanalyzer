@@ -514,6 +514,23 @@ def test_zuordnungsluecken_geister_und_ohne_rechnung():
     assert z["ohne_rechnung"] == ["0180-9"]     # Vertrag, keine Rechnungsposition
 
 
+def test_invoice_diff_position_ohne_kostenstelle_im_ohne_bucket():
+    alt = [{"rufnummer": "0151 1", "kostenstelle": None, "amount": 100}]
+    neu = [{"rufnummer": "0151 1", "kostenstelle": None, "amount": 130}]
+    d = analytics.invoice_diff(alt, neu)
+    ks = {r["kostenstelle"]: r for r in d["je_kostenstelle"]}
+    assert "(ohne)" in ks and ks["(ohne)"]["delta"] == 30.0   # faellt nicht mehr stillschweigend raus
+
+
+def test_top_rufnummer_gesamt_normalisiert_schreibweisen():
+    lines = [
+        {"rufnummer": "+49-151-1", "amount": 60, "_period_start": "2026-05-01"},
+        {"rufnummer": "49151 1", "amount": 40, "_period_start": "2026-06-01"},  # gleiche Nummer, andere Schreibweise
+    ]
+    top = analytics.top_rufnummer_gesamt(lines, {})
+    assert len(top) == 1 and top[0]["netto"] == 100.0        # nicht in zwei halbe Zeilen zerfallen
+
+
 def test_top_rufnummer_gesamt_unique_je_rufnummer():
     lines = [
         {"rufnummer": "0151 1", "amount": 60, "_period_start": "2026-05-01"},

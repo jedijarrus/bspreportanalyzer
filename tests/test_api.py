@@ -80,6 +80,16 @@ def test_setup_zweimal_konflikt(app_store):
     assert c.post("/api/auth/setup", json={"password": "anderes123"}).status_code == 409
 
 
+def test_login_rate_limit(app_store):
+    app, _ = app_store
+    TestClient(app).post("/api/auth/setup", json={"password": PW})
+    c = TestClient(app)  # frische Session
+    for _ in range(5):
+        assert c.post("/api/auth/login", json={"password": "falsch-123"}).status_code == 401
+    assert c.post("/api/auth/login", json={"password": "falsch-123"}).status_code == 429  # gesperrt
+    assert c.post("/api/auth/login", json={"password": PW}).status_code == 429             # auch korrekt gesperrt
+
+
 def test_datenendpunkt_braucht_login(app_store):
     app, _ = app_store
     setup = TestClient(app)

@@ -268,7 +268,7 @@ def kosten_je_kostenstelle(lines: list[dict]) -> list[dict]:
         d["netto"] += _amt(l)
         if l.get("rufnummer"):
             d["_rufs"].add(l["rufnummer"])
-    result = [{"kostenstelle": d["kostenstelle"], "netto": d["netto"],
+    result = [{"kostenstelle": d["kostenstelle"], "netto": round(d["netto"], 2),
                "anzahl_rufnummern": len(d["_rufs"])} for d in agg.values()]
     result.sort(key=lambda x: -x["netto"])
     return result
@@ -284,9 +284,7 @@ def kosten_je_kategorie(lines: list[dict]) -> list[tuple[str, float]]:
 def _netto_map(lines: list[dict], key: str) -> dict[str, float]:
     m: dict[str, float] = {}
     for l in lines:
-        k = l.get(key)
-        if k is None:
-            continue
+        k = l.get(key) or "(ohne)"   # None/leer -> "(ohne)", damit die Deltas sich zur Summe addieren
         m[k] = m.get(k, 0.0) + _amt(l)
     return m
 
@@ -366,7 +364,7 @@ def kosten_trend(lines: list[dict]) -> list[dict]:
     for l in lines:
         p = l.get("_period_start") or l.get("period_start") or ""
         agg[p] = agg.get(p, 0.0) + _amt(l)
-    return [{"period": p, "netto": v} for p, v in sorted(agg.items())]
+    return [{"period": p, "netto": round(v, 2)} for p, v in sorted(agg.items())]
 
 
 def fleet_gb_trend(lines: list[dict]) -> list[dict]:
@@ -417,9 +415,13 @@ def top_rufnummer_gesamt(lines: list[dict], nutzer_map: dict, n: int = 12) -> li
     Report). Bewusst NICHT nach Nutzer gruppiert — Pools haben mehrere Rufnummern
     unter gleichem/leerem Nutzer, die sonst falsch zusammengefasst würden.
     """
-    rows = [{"rufnummer": ruf, "netto": round(v["netto"], 2),
-             "nutzer": nutzer_map.get(normalize_rufnummer(ruf))}
-            for ruf, v in kosten_je_rufnummer(lines).items()]
+    agg: dict[str, dict] = {}  # normalisierte Rufnummer -> {netto, rufnummer(Anzeige)}
+    for ruf, v in kosten_je_rufnummer(lines).items():
+        nk = normalize_rufnummer(ruf)
+        d = agg.setdefault(nk, {"netto": 0.0, "rufnummer": ruf})
+        d["netto"] += v["netto"]
+    rows = [{"rufnummer": d["rufnummer"], "netto": round(d["netto"], 2),
+             "nutzer": nutzer_map.get(nk)} for nk, d in agg.items()]
     rows.sort(key=lambda r: -r["netto"])
     return rows[:n]
 
