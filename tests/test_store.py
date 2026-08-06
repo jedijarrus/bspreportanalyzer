@@ -148,6 +148,15 @@ def test_delete_invoice_cascade(db, make_invoice_csv):
     assert db.get_invoice_lines(iid) == []
 
 
+def test_find_report_dedup(db, make_report):
+    data = parser.parse_report(make_report(rows=3, seed=1))
+    db.add_report(data)
+    rd = data.report_date.isoformat() if data.report_date else None
+    assert db.find_report(data.filename, rd, len(data.rows))["filename"] == data.filename
+    assert db.find_report("andere.xlsx", rd, len(data.rows)) is None
+    assert db.find_report(data.filename, rd, 999) is None   # andere Zeilenzahl != Duplikat
+
+
 def test_find_invoice_by_number(db, make_invoice_csv):
     db.add_invoice(invoice_parser.parse_invoice(make_invoice_csv(rufnummern=["0151A"], invoice_number="555")))
     assert db.find_invoice("555")["invoice_number"] == "555"

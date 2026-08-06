@@ -182,6 +182,14 @@ def test_current_alter_report_wird_als_veraltet_markiert(client):
     assert body["stand_alter_tage"] > 14
 
 
+def test_report_upload_dedup(client):
+    r1 = _upload(client, rows=4, seed=1, name="20260701-000000_RVKU-KI_dup.xlsx")
+    assert r1.json()["duplicate"] is False
+    r2 = _upload(client, rows=4, seed=1, name="20260701-000000_RVKU-KI_dup.xlsx")  # gleiche Datei
+    assert r2.json()["duplicate"] is True
+    assert len(client.get("/api/reports").json()) == 1  # nicht doppelt
+
+
 def test_notes_setzen_und_lesen(client):
     assert client.post("/api/notes", json={"key": "RV-A|0151", "note": "VVL prüfen"}).status_code == 200
     assert client.get("/api/notes").json()["RV-A|0151"] == "VVL prüfen"

@@ -31,8 +31,19 @@ def get_secret_key() -> str:
         return env
     key_file = DATA_DIR / "secret.key"
     if key_file.exists():
+        _restrict(key_file)
         return key_file.read_text().strip()
     DATA_DIR.mkdir(parents=True, exist_ok=True)
     key = secrets.token_hex(32)
     key_file.write_text(key)
+    _restrict(key_file)
     return key
+
+
+def _restrict(path: Path) -> None:
+    """Session-Signierschlüssel nur für den Owner lesbar (chmod 600, best effort).
+    Wer die Datei liest, kann beliebige Session-Cookies signieren -> Auth-Umgehung."""
+    try:
+        os.chmod(path, 0o600)
+    except OSError:
+        pass

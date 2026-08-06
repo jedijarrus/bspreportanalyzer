@@ -175,6 +175,17 @@ class Store:
         ).fetchall()
         return [dict(r) for r in rows]
 
+    def find_report(self, filename: str, report_date: str | None,
+                    row_count: int) -> dict[str, Any] | None:
+        """Vorhandener Report gleicher Datei + Datum + Zeilenzahl (Dedup beim Upload).
+        Geteilte Telekom-Exporte (gleiches Datum, andere Datei/Zeilenzahl) bleiben getrennt."""
+        row = self.con.execute(
+            "SELECT id, filename FROM reports "
+            "WHERE filename = ? AND report_date IS ? AND row_count = ?",
+            (filename, report_date, row_count),
+        ).fetchone()
+        return dict(row) if row else None
+
     def get_contracts(self, report_id: int) -> list[dict[str, Any]]:
         rows = self.con.execute(
             "SELECT * FROM contracts WHERE report_id = ? ORDER BY id", (report_id,)
