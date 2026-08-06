@@ -6,6 +6,12 @@ services:
       - "${BSP_PORT:-8080}:${BSP_PORT:-8080}"
     environment:
       - BSP_PORT=${BSP_PORT:-8080}
+      - BSP_HTTPS_ONLY=${BSP_HTTPS_ONLY:-}
+      - BSP_BASE_URL=${BSP_BASE_URL:-}
+      - BSP_SECRET_KEY=${BSP_SECRET_KEY:-}
+      - GRAPH_TENANT_ID=${GRAPH_TENANT_ID:-}
+      - GRAPH_CLIENT_ID=${GRAPH_CLIENT_ID:-}
+      - GRAPH_CLIENT_SECRET=${GRAPH_CLIENT_SECRET:-}
     volumes:
       # Echte Daten leben NUR hier auf dem Host — nie im Image, nie im Repo
       - ./data:/data

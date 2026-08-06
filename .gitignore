@@ -52,3 +52,7 @@ Thumbs.db
 # Lokale Scratch-/Laufzeit-Logs
 scratch_*
 *.log
+
+# Secrets / lokale Env (Client-Secret!) — nur .env.example ist getrackt
+.env
+!.env.example
