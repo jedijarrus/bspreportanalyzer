@@ -226,6 +226,25 @@ def test_kosten_je_kategorie():
     assert round(d["grundpreis"]) == 60 and round(d["rabatt"]) == -15
 
 
+def test_kosten_je_position_gruppiert_je_kategorie_und_positionsname():
+    lines = [
+        _il(category="grundpreis", item_name="Business Mobil L", amount=60),
+        _il(category="grundpreis", item_name="Business Mobil L", amount=65),
+        _il(category="option", item_name="DataPlus 12 GB", amount=17),
+        _il(category="rabatt", item_name="25% auf Grundpreis", amount=-15),
+        _il(category="info", item_name="Datenvolumen", amount=0),   # 0€-Info -> raus
+    ]
+    out = analytics.kosten_je_position(lines)
+    cats = {c["category"]: c for c in out}
+    assert "info" not in cats                       # 0€-Infozeilen fliegen raus
+    g = cats["grundpreis"]
+    assert round(g["summe"]) == 125 and g["anzahl"] == 2
+    pos = g["positionen"][0]
+    assert pos["name"] == "Business Mobil L" and pos["anzahl"] == 2 and round(pos["summe"]) == 125
+    # nach Betrag sortiert: grundpreis (125) vor rabatt (-15) vor option (17)? -> abs: 125,17,15
+    assert [c["category"] for c in out] == ["grundpreis", "option", "rabatt"]
+
+
 def test_invoice_diff_delta_je_kostenstelle_und_rufnummer():
     alt = [_il(rufnummer="A", kostenstelle="K1", category="grundpreis", amount=60)]
     neu = [_il(rufnummer="A", kostenstelle="K1", category="grundpreis", amount=70),
