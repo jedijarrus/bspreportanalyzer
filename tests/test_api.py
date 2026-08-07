@@ -372,6 +372,11 @@ def test_invoice_detail(client):
     assert "kategorie" in body and "kostenstelle" in body
     assert "reconcile" in body and "datenauslastung" in body
     assert body["diff"] is None  # keine Vorrechnung
+    # Positionen je Kategorie aufgeschlüsselt (Name + Anzahl + Summe)
+    pos = body["positionen"]
+    assert pos and all({"category", "summe", "anzahl", "positionen"} <= set(c) for c in pos)
+    grund = [c for c in pos if c["category"] == "grundpreis"][0]
+    assert grund["positionen"][0]["anzahl"] >= 1 and "name" in grund["positionen"][0]
 
 
 def test_invoice_detail_diff_vs_vormonat(client):

@@ -281,6 +281,34 @@ def kosten_je_kategorie(lines: list[dict]) -> list[tuple[str, float]]:
     return sorted(agg.items(), key=lambda x: -abs(x[1]))
 
 
+def kosten_je_position(lines: list[dict]) -> list[dict]:
+    """Je Kategorie die Einzelpositionen (nach item_name) mit Anzahl + Summe.
+    Fürs Rechnungsprüfen: welche Grundpreise/Optionen/Rabatte machen die Summe aus.
+    0€-Infozeilen (Datenvolumen) bleiben außen vor – Geld-Sicht, Verbrauch steckt
+    in der Datenauslastung."""
+    cats: dict[str, dict] = {}
+    for l in lines:
+        cat = l.get("category") or "?"
+        if cat == "info":
+            continue
+        name = ((l.get("item_name") or "").strip()) or "(ohne Bezeichnung)"
+        c = cats.setdefault(cat, {"category": cat, "summe": 0.0, "anzahl": 0, "_pos": {}})
+        amt = _amt(l)
+        c["summe"] += amt
+        c["anzahl"] += 1
+        p = c["_pos"].setdefault(name, {"name": name, "summe": 0.0, "anzahl": 0})
+        p["summe"] += amt
+        p["anzahl"] += 1
+    out: list[dict] = []
+    for c in cats.values():
+        positionen = sorted(c.pop("_pos").values(), key=lambda p: -abs(p["summe"]))
+        for p in positionen:
+            p["summe"] = round(p["summe"], 2)
+        out.append({"category": c["category"], "summe": round(c["summe"], 2),
+                    "anzahl": c["anzahl"], "positionen": positionen})
+    return sorted(out, key=lambda c: -abs(c["summe"]))
+
+
 def _netto_map(lines: list[dict], key: str) -> dict[str, float]:
     m: dict[str, float] = {}
     for l in lines:

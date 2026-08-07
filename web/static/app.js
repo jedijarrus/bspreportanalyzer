@@ -691,6 +691,32 @@ async function renderRechnungen(param) {
     </div>`;
 }
 
+const KAT_LABEL = { grundpreis: "Grundpreise", option: "Optionen", rabatt: "Rabatte", verbrauch: "Verbrauch", info: "Info", "?": "Sonstiges" };
+function katLabel(k) { return KAT_LABEL[k] || k; }
+
+// Positionen je Kategorie aufgeschlüsselt (Name × Anzahl → Summe) — fürs Rechnungsprüfen
+function posBreakdownHtml(positionen) {
+  if (!positionen || !positionen.length) return '<div class="hint">keine Positionen</div>';
+  return positionen.map((c) => `
+    <div class="pos-cat">
+      <div class="pos-cat-head">
+        <span class="cat cat-${esc(c.category)}">${esc(katLabel(c.category))}</span>
+        <span class="muted">${c.anzahl} Position${c.anzahl === 1 ? "" : "en"}</span>
+        <b class="pos-cat-sum">${fmtEur(c.summe)}</b>
+      </div>
+      <table class="grid-table pos-table">
+        <thead><tr><th>Position</th><th class="num">Anzahl</th><th class="money">Ø / Stück</th><th class="money">Summe</th></tr></thead>
+        <tbody>${c.positionen.map((p) => `
+          <tr>
+            <td>${esc(p.name)}</td>
+            <td class="num">${p.anzahl}</td>
+            <td class="money muted">${p.anzahl ? fmtEur(p.summe / p.anzahl) : "–"}</td>
+            <td class="money">${fmtEur(p.summe)}</td>
+          </tr>`).join("")}</tbody>
+      </table>
+    </div>`).join("");
+}
+
 async function renderRechnung(pane, id) {
   pane.innerHTML = '<div class="page"><a class="back" href="#/rechnungen">← Alle Rechnungen</a><div class="hint">lade …</div></div>';
   const d = await api(`/api/invoices/${id}`);
@@ -725,7 +751,7 @@ async function renderRechnung(pane, id) {
         </div>
       </div>
       <div class="panel-grid">
-        <div class="card2"><h3>Nach Kategorie</h3>${d.kategorie.map(([k, v]) => `<div class="dl"><span><span class="cat cat-${esc(k)}">${esc(k)}</span></span><b>${fmtEur(v)} <span class="muted">${Math.round(Math.abs(v) / katSum * 100)}%</span></b></div>`).join("")}</div>
+        <div class="card2"><h3>Nach Kategorie</h3>${d.kategorie.map(([k, v]) => `<div class="dl"><span><span class="cat cat-${esc(k)}">${esc(katLabel(k))}</span></span><b>${fmtEur(v)} <span class="muted">${Math.round(Math.abs(v) / katSum * 100)}%</span></b></div>`).join("")}</div>
         <div class="card2"><h3>Nach Rahmenvertrag</h3>${(d.je_rahmenvertrag || []).map((x) => `<div class="dl"><span>${esc(x.rahmenvertrag)} <span class="muted">· ${x.anzahl}</span></span><b>${fmtEur(x.netto)}</b></div>`).join("")}</div>
         <div class="card2"><h3>Top-Kostentreiber <span class="muted">(Mitarbeiter)</span></h3>${d.top_treiber.slice(0, 8).map((t) => `<div class="dl"><span>${esc(t.nutzer || t.rufnummer)}</span><b>${fmtEur(t.netto)}</b></div>`).join("")}</div>
         <div class="card2"><h3>Auffälligkeiten (Δ)</h3>${anom}</div>
@@ -736,6 +762,8 @@ async function renderRechnung(pane, id) {
           <div class="dl"><span>Overage (&gt; 100%)</span><b>${au.ueber_100}</b></div>
         </div>
       </div>
+      <div class="section-title">Positionen aufgeschlüsselt <span class="muted">(je Kategorie · Name × Anzahl)</span></div>
+      <div class="pos-breakdown">${posBreakdownHtml(d.positionen)}</div>
     </div>`;
 }
 

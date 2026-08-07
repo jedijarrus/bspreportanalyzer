@@ -372,6 +372,7 @@ def create_app(secret_key: str | None = None) -> FastAPI:
         return {
             "invoice": inv,
             "kategorie": analytics.kosten_je_kategorie(lines),
+            "positionen": analytics.kosten_je_position(lines),
             "kostenstelle": analytics.kosten_je_kostenstelle(lines),
             "reconcile": analytics.reconcile(lines, inv.get("total_net") or 0.0),
             "datenauslastung": analytics.datenauslastung(lines),
