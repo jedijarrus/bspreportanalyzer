@@ -245,6 +245,26 @@ def test_kosten_je_position_gruppiert_je_kategorie_und_positionsname():
     assert [c["category"] for c in out] == ["grundpreis", "option", "rabatt"]
 
 
+def test_konsum_je_mitarbeiter_datenpaesse_und_verbindung():
+    lines = [
+        _il(kostenstellennutzer="Max", category="option", item_name="SpeedOn 3 GB", amount=6.99),
+        _il(kostenstellennutzer="Max", category="option", item_name="SpeedOn 3 GB", amount=6.99),
+        _il(kostenstellennutzer="Max", category="verbrauch", item_name="Verbindungen Ausland", amount=4.20),
+        _il(kostenstellennutzer="Erika", category="verbrauch", item_name="SMS-Versand", amount=1.50),
+        _il(kostenstellennutzer="Max", category="grundpreis", item_name="Business Mobil L", amount=60),  # zählt nicht
+        _il(kostenstellennutzer="Leer", category="option", item_name="X", amount=0),                     # 0€ raus
+    ]
+    out = analytics.konsum_je_mitarbeiter(lines)
+    by = {r["nutzer"]: r for r in out}
+    assert "Leer" not in by
+    assert round(by["Max"]["datenpaesse"], 2) == 13.98 and by["Max"]["datenpass_anzahl"] == 2
+    assert round(by["Max"]["verbindung"], 2) == 4.20
+    assert round(by["Max"]["summe"], 2) == 18.18
+    assert round(by["Erika"]["verbindung"], 2) == 1.50 and by["Erika"]["datenpaesse"] == 0
+    assert out[0]["nutzer"] == "Max"                       # nach Summe sortiert
+    assert by["Max"]["pass_namen"][0]["name"] == "SpeedOn 3 GB"  # gebuchte Pässe mit Namen
+
+
 def test_invoice_diff_delta_je_kostenstelle_und_rufnummer():
     alt = [_il(rufnummer="A", kostenstelle="K1", category="grundpreis", amount=60)]
     neu = [_il(rufnummer="A", kostenstelle="K1", category="grundpreis", amount=70),

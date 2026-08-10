@@ -309,6 +309,43 @@ def kosten_je_position(lines: list[dict]) -> list[dict]:
     return sorted(out, key=lambda c: -abs(c["summe"]))
 
 
+def konsum_je_mitarbeiter(lines: list[dict]) -> list[dict]:
+    """Je Mitarbeiter (Kostenstellennutzer) für den Monat: gebuchte Datenpässe
+    (Optionen) und verursachte Verbindungskosten (Verbrauch). Fürs Rechnungs-
+    Monitoring – wer bucht Zusatz-Pässe, wer verursacht Verbindungskosten.
+    0€-Zeilen fallen raus, nur wer wirklich etwas hat, taucht auf."""
+    agg: dict[str, dict] = {}
+    for l in lines:
+        cat = l.get("category")
+        if cat not in ("option", "verbrauch"):
+            continue
+        amt = _amt(l)
+        if amt == 0:
+            continue
+        nutzer = ((l.get("kostenstellennutzer") or "").strip()) or "(ohne Nutzer)"
+        a = agg.setdefault(nutzer, {"nutzer": nutzer, "datenpaesse": 0.0,
+                                    "datenpass_anzahl": 0, "verbindung": 0.0, "_pass": {}})
+        if cat == "option":
+            a["datenpaesse"] += amt
+            a["datenpass_anzahl"] += 1
+            name = ((l.get("item_name") or "").strip()) or "(ohne Bezeichnung)"
+            a["_pass"][name] = a["_pass"].get(name, 0.0) + amt
+        else:
+            a["verbindung"] += amt
+    out: list[dict] = []
+    for a in agg.values():
+        passes = sorted(a.pop("_pass").items(), key=lambda kv: -kv[1])
+        out.append({
+            "nutzer": a["nutzer"],
+            "datenpaesse": round(a["datenpaesse"], 2),
+            "datenpass_anzahl": a["datenpass_anzahl"],
+            "verbindung": round(a["verbindung"], 2),
+            "summe": round(a["datenpaesse"] + a["verbindung"], 2),
+            "pass_namen": [{"name": n, "summe": round(v, 2)} for n, v in passes],
+        })
+    return sorted(out, key=lambda r: -r["summe"])
+
+
 def _netto_map(lines: list[dict], key: str) -> dict[str, float]:
     m: dict[str, float] = {}
     for l in lines:

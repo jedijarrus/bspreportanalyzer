@@ -803,8 +803,18 @@ async function renderControlling() {
   const changeBody = !diff
     ? '<div class="hint">erste Rechnung — kein Vormonatsvergleich</div>'
     : (changes.length
-        ? `<table class="grid-table"><thead><tr><th>Rufnummer</th><th class="money">Vormonat</th><th class="money">Aktuell</th><th class="money">Δ</th></tr></thead><tbody>${changes.map((r) => `<tr class="linie-open" data-goto-ruf="${esc(r.rufnummer)}" title="Monitoring öffnen"><td>${esc(r.rufnummer)}</td><td class="money">${money(r.alt)}</td><td class="money">${money(r.neu)}</td><td class="money">${deltaBadge(r.delta, r.alt ? r.delta / r.alt * 100 : null)}</td></tr>`).join("")}</tbody></table>`
+        ? `<table class="grid-table"><thead><tr><th>Rufnummer</th><th>Mitarbeiter</th><th class="money">Vormonat</th><th class="money">Aktuell</th><th class="money">Δ</th></tr></thead><tbody>${changes.map((r) => `<tr class="linie-open" data-goto-ruf="${esc(r.rufnummer)}" title="Monitoring öffnen"><td>${esc(r.rufnummer)}</td><td>${esc(r.nutzer || "–")}</td><td class="money">${money(r.alt)}</td><td class="money">${money(r.neu)}</td><td class="money">${deltaBadge(r.delta, r.alt ? r.delta / r.alt * 100 : null)}</td></tr>`).join("")}</tbody></table>`
         : '<div class="hint">keine Kostenänderungen ggü. Vormonat</div>');
+  const km = d.konsum_mitarbeiter || [];
+  const kmHtml = km.length
+    ? `<table class="grid-table"><thead><tr><th>Mitarbeiter</th><th class="money">Datenpässe</th><th class="num">Pässe</th><th class="money">Verbindungskosten</th><th class="money">Summe</th></tr></thead>
+        <tbody>${km.map((r) => `<tr>
+          <td>${esc(r.nutzer)}${r.pass_namen.length ? `<div class="cell-sub">${r.pass_namen.map((p) => esc(p.name) + " " + money(p.summe)).join(" · ")}</div>` : ""}</td>
+          <td class="money">${r.datenpaesse ? money(r.datenpaesse) : "–"}</td>
+          <td class="num">${r.datenpass_anzahl || "–"}</td>
+          <td class="money">${r.verbindung ? money(r.verbindung) : "–"}</td>
+          <td class="money"><b>${money(r.summe)}</b></td></tr>`).join("")}</tbody></table>`
+    : '<div class="hint">Keine gebuchten Datenpässe oder Verbindungskosten in diesem Monat.</div>';
   const zl = d.zuordnungsluecken || { geister: [], ohne_rechnung: [] };
   const chip = (r) => `<span class="chip linie-open" data-goto-ruf="${esc(r)}">${esc(r)}</span>`;
   const zlHtml = (zl.geister.length || zl.ohne_rechnung.length)
@@ -844,6 +854,9 @@ async function renderControlling() {
             <tbody>${(d.top_gesamt || []).map((t) => `<tr class="linie-open" data-goto-ruf="${esc(t.rufnummer || "")}" title="Monitoring öffnen"><td>${esc(t.nutzer || "–")}</td><td>${esc(t.rufnummer)}</td><td class="money">${money(t.netto)}</td></tr>`).join("")}</tbody></table></div>
         </div>
       </div>
+
+      <div class="section-title">Datenpässe &amp; Verbindungskosten je Mitarbeiter <span class="muted">(dieser Monat)</span></div>
+      <div class="table-wrap" style="max-height:360px;overflow:auto">${kmHtml}</div>
 
       <div class="section-title">Kosten je Rahmenvertrag</div>
       <div class="chart-box" style="height:260px"><canvas id="ctrlRv"></canvas></div>

@@ -369,10 +369,19 @@ def create_app(secret_key: str | None = None) -> FastAPI:
         pos = [i["id"] for i in ordered].index(invoice_id)
         prev = ordered[pos - 1] if pos > 0 else None
         diff = analytics.invoice_diff(db.get_invoice_lines(prev["id"]), lines) if prev else None
+        if diff:
+            # Mitarbeiter je Rufnummer ergänzen (Report-Zuordnung, sonst Rechnungs-Nutzer)
+            line_nutzer = {norm(l["rufnummer"]): l.get("kostenstellennutzer")
+                           for l in lines if l.get("rufnummer")}
+            for row in diff["je_rufnummer"]:
+                c = cmap.get(norm(row["rufnummer"]))
+                row["nutzer"] = ((c.get("kostenstellennutzer") if c else None)
+                                 or line_nutzer.get(norm(row["rufnummer"])))
         return {
             "invoice": inv,
             "kategorie": analytics.kosten_je_kategorie(lines),
             "positionen": analytics.kosten_je_position(lines),
+            "konsum_mitarbeiter": analytics.konsum_je_mitarbeiter(lines),
             "kostenstelle": analytics.kosten_je_kostenstelle(lines),
             "reconcile": analytics.reconcile(lines, inv.get("total_net") or 0.0),
             "datenauslastung": analytics.datenauslastung(lines),
