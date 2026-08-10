@@ -245,24 +245,26 @@ def test_kosten_je_position_gruppiert_je_kategorie_und_positionsname():
     assert [c["category"] for c in out] == ["grundpreis", "option", "rabatt"]
 
 
-def test_konsum_je_mitarbeiter_datenpaesse_und_verbindung():
+def test_konsum_je_rufnummer_datenpaesse_getrennt_und_keyword_gefiltert():
     lines = [
-        _il(kostenstellennutzer="Max", category="option", item_name="SpeedOn 3 GB", amount=6.99),
-        _il(kostenstellennutzer="Max", category="option", item_name="SpeedOn 3 GB", amount=6.99),
-        _il(kostenstellennutzer="Max", category="verbrauch", item_name="Verbindungen Ausland", amount=4.20),
-        _il(kostenstellennutzer="Erika", category="verbrauch", item_name="SMS-Versand", amount=1.50),
-        _il(kostenstellennutzer="Max", category="grundpreis", item_name="Business Mobil L", amount=60),  # zählt nicht
-        _il(kostenstellennutzer="Leer", category="option", item_name="X", amount=0),                     # 0€ raus
+        _il(rufnummer="0151A", kostenstellennutzer="Max", category="option", item_name="SpeedOn 3 GB", amount=6.99),
+        _il(rufnummer="0151A", kostenstellennutzer="Max", category="option", item_name="CountryFlat EU", amount=4.95),  # KEIN Datenpass
+        _il(rufnummer="0151A", kostenstellennutzer="Max", category="option", item_name="MultiSIM", amount=4.95),        # KEIN Datenpass
+        _il(rufnummer="0151A", kostenstellennutzer="Max", category="verbrauch", item_name="Verbindungen Ausland", amount=4.20),
+        _il(rufnummer="0151B", kostenstellennutzer="Erika", category="option", item_name="Surfpass Travel", amount=9.95),
+        _il(rufnummer="0151B", kostenstellennutzer="Erika", category="verbrauch", item_name="SMS", amount=0),           # 0€ raus
+        _il(rufnummer=None, kostenstellennutzer="X", category="verbrauch", item_name="Y", amount=3),                    # ohne Rufnr raus
     ]
-    out = analytics.konsum_je_mitarbeiter(lines)
-    by = {r["nutzer"]: r for r in out}
-    assert "Leer" not in by
-    assert round(by["Max"]["datenpaesse"], 2) == 13.98 and by["Max"]["datenpass_anzahl"] == 2
-    assert round(by["Max"]["verbindung"], 2) == 4.20
-    assert round(by["Max"]["summe"], 2) == 18.18
-    assert round(by["Erika"]["verbindung"], 2) == 1.50 and by["Erika"]["datenpaesse"] == 0
-    assert out[0]["nutzer"] == "Max"                       # nach Summe sortiert
-    assert by["Max"]["pass_namen"][0]["name"] == "SpeedOn 3 GB"  # gebuchte Pässe mit Namen
+    out = analytics.konsum_je_rufnummer(lines)
+    by = {r["rufnummer"]: r for r in out}
+    assert set(by) == {"0151A", "0151B"}
+    a = by["0151A"]
+    assert a["nutzer"] == "Max"
+    assert round(a["datenpaesse"], 2) == 6.99 and a["datenpass_anzahl"] == 1   # nur SpeedOn, nicht CountryFlat/MultiSIM
+    assert round(a["verbindung"], 2) == 4.20
+    assert a["pass_namen"][0]["name"] == "SpeedOn 3 GB"
+    b = by["0151B"]
+    assert round(b["datenpaesse"], 2) == 9.95 and b["verbindung"] == 0         # Surfpass zählt, kein Verbrauch
 
 
 def test_invoice_diff_delta_je_kostenstelle_und_rufnummer():

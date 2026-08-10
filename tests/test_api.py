@@ -387,8 +387,8 @@ def test_invoice_detail_diff_vs_vormonat(client):
     assert "gesamt" in body["diff"]
     # je_rufnummer trägt den Mitarbeiter (Kostenstellennutzer) für die Controlling-Sicht
     assert all("nutzer" in r for r in body["diff"]["je_rufnummer"])
-    # Konsum je Mitarbeiter (Datenpässe + Verbindungskosten) für den Monat
-    assert "konsum_mitarbeiter" in body and isinstance(body["konsum_mitarbeiter"], list)
+    # Konsum je Rufnummer (Datenpässe getrennt von Verbindungskosten) für den Monat
+    assert "konsum" in body and isinstance(body["konsum"], list)
 
 
 def test_costs_kostenstellen_je_invoice(client):

@@ -309,23 +309,41 @@ def kosten_je_position(lines: list[dict]) -> list[dict]:
     return sorted(out, key=lambda c: -abs(c["summe"]))
 
 
-def konsum_je_mitarbeiter(lines: list[dict]) -> list[dict]:
-    """Je Mitarbeiter (Kostenstellennutzer) für den Monat: gebuchte Datenpässe
-    (Optionen) und verursachte Verbindungskosten (Verbrauch). Fürs Rechnungs-
-    Monitoring – wer bucht Zusatz-Pässe, wer verursacht Verbindungskosten.
-    0€-Zeilen fallen raus, nur wer wirklich etwas hat, taucht auf."""
+# Echte (zubuchbare) Datenpässe – NICHT Dauer-Optionen wie CountryFlat/MultiSIM.
+# item_name (case-insensitive) muss eines dieser Keywords enthalten.
+_DATENPASS_KEYWORDS = (
+    "speedon", "surf", "datapass", "datenpass", "data pass",
+    "daypass", "day pass", "dayflat", "day flat", "speedbucket", "hotspot",
+)
+
+
+def _ist_datenpass(item_name: str | None) -> bool:
+    n = (item_name or "").lower()
+    return any(k in n for k in _DATENPASS_KEYWORDS)
+
+
+def konsum_je_rufnummer(lines: list[dict]) -> list[dict]:
+    """Je Rufnummer für den Monat: gebuchte Datenpässe (SpeedOn/Surf/… – KEINE
+    CountryFlat/MultiSIM) und verursachte Verbindungskosten (Verbrauch) – getrennt.
+    Eindeutig je Rufnummer (Pools = mehrere Rufnummern), Mitarbeiter nur zur Anzeige.
+    Zeilen ohne Rufnummer und 0€-Zeilen fallen raus."""
     agg: dict[str, dict] = {}
     for l in lines:
-        cat = l.get("category")
-        if cat not in ("option", "verbrauch"):
+        ruf = (l.get("rufnummer") or "").strip()
+        if not ruf:
             continue
         amt = _amt(l)
         if amt == 0:
             continue
-        nutzer = ((l.get("kostenstellennutzer") or "").strip()) or "(ohne Nutzer)"
-        a = agg.setdefault(nutzer, {"nutzer": nutzer, "datenpaesse": 0.0,
-                                    "datenpass_anzahl": 0, "verbindung": 0.0, "_pass": {}})
-        if cat == "option":
+        is_pass = l.get("category") == "option" and _ist_datenpass(l.get("item_name"))
+        is_verb = l.get("category") == "verbrauch"
+        if not (is_pass or is_verb):
+            continue
+        a = agg.setdefault(ruf, {"rufnummer": ruf, "nutzer": None, "datenpaesse": 0.0,
+                                 "datenpass_anzahl": 0, "verbindung": 0.0, "_pass": {}})
+        if a["nutzer"] is None:
+            a["nutzer"] = ((l.get("kostenstellennutzer") or "").strip()) or None
+        if is_pass:
             a["datenpaesse"] += amt
             a["datenpass_anzahl"] += 1
             name = ((l.get("item_name") or "").strip()) or "(ohne Bezeichnung)"
@@ -336,14 +354,12 @@ def konsum_je_mitarbeiter(lines: list[dict]) -> list[dict]:
     for a in agg.values():
         passes = sorted(a.pop("_pass").items(), key=lambda kv: -kv[1])
         out.append({
-            "nutzer": a["nutzer"],
-            "datenpaesse": round(a["datenpaesse"], 2),
-            "datenpass_anzahl": a["datenpass_anzahl"],
+            "rufnummer": a["rufnummer"], "nutzer": a["nutzer"],
+            "datenpaesse": round(a["datenpaesse"], 2), "datenpass_anzahl": a["datenpass_anzahl"],
             "verbindung": round(a["verbindung"], 2),
-            "summe": round(a["datenpaesse"] + a["verbindung"], 2),
             "pass_namen": [{"name": n, "summe": round(v, 2)} for n, v in passes],
         })
-    return sorted(out, key=lambda r: -r["summe"])
+    return sorted(out, key=lambda r: -(r["datenpaesse"] + r["verbindung"]))
 
 
 def _netto_map(lines: list[dict], key: str) -> dict[str, float]:
