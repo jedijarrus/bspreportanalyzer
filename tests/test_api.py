@@ -74,6 +74,27 @@ def test_azure_verify_ungueltiges_token_401(azure_app, monkeypatch):
     assert TestClient(azure_app[0]).post("/api/auth/azure/verify", json={"token": "x"}).status_code == 401
 
 
+def test_has_role():
+    assert azure_verify.has_role({"roles": ["A"]}, None) is True          # keine Rolle verlangt
+    assert azure_verify.has_role({"roles": ["Analyzer.Read"]}, "Analyzer.Read") is True
+    assert azure_verify.has_role({"roles": ["Other"]}, "Analyzer.Read") is False
+    assert azure_verify.has_role({}, "Analyzer.Read") is False            # kein roles-Claim
+
+
+def test_azure_verify_verlangt_approlle(azure_app, monkeypatch):
+    app = azure_app[0]
+    monkeypatch.setenv("GRAPH_REQUIRED_ROLE", "Analyzer.Read")
+    c = TestClient(app)
+    # ohne passende Rolle -> 403, Session NICHT gesetzt
+    monkeypatch.setattr(azure_verify, "validate_token", lambda tok, ten, cid: {"name": "X", "tid": ten, "roles": []})
+    assert c.post("/api/auth/azure/verify", json={"token": "x"}).status_code == 403
+    assert c.get("/api/reports").status_code == 401
+    # mit Rolle -> 200 + Zugriff
+    monkeypatch.setattr(azure_verify, "validate_token", lambda tok, ten, cid: {"name": "X", "tid": ten, "roles": ["Analyzer.Read"]})
+    assert c.post("/api/auth/azure/verify", json={"token": "x"}).status_code == 200
+    assert c.get("/api/reports").status_code == 200
+
+
 def test_validate_token_roundtrip(monkeypatch):
     import time as _t
     from authlib.jose import JsonWebKey, jwt

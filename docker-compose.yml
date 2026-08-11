@@ -15,6 +15,7 @@ services:
       - GRAPH_TENANT_ID=${GRAPH_TENANT_ID:-}
       - GRAPH_CLIENT_ID=${GRAPH_CLIENT_ID:-}
       - GRAPH_CLIENT_SECRET=${GRAPH_CLIENT_SECRET:-}
+      - GRAPH_REQUIRED_ROLE=${GRAPH_REQUIRED_ROLE:-}
     volumes:
       # Echte Daten leben NUR hier auf dem Host — nie im Image, nie im Repo
       - ./data:/data

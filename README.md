@@ -88,6 +88,7 @@ Steuerung über Umgebungsvariablen (z. B. in `docker-compose.yml`):
 | `BSP_HTTPS_ONLY` | `false` | Session-Cookie nur über HTTPS (hinter TLS-Proxy auf `true`) |
 | `BSP_BASE_URL` | aus Request abgeleitet | Basis-URL für die SSO-Redirect-URI hinter einem Proxy |
 | `GRAPH_TENANT_ID` / `GRAPH_CLIENT_ID` / `GRAPH_CLIENT_SECRET` | — | Azure/Entra-ID-SSO (alle drei = SSO aktiv) |
+| `GRAPH_REQUIRED_ROLE` | — | optional: nur Nutzer mit dieser App-Rolle (z. B. `Analyzer.Read`) dürfen sich anmelden |
 
 ### Anmeldung
 
@@ -106,6 +107,11 @@ App-URL als Redirect-URI eintragen (z. B. `https://deine-app.example`) und
 `BSP_BASE_URL`/`BSP_HTTPS_ONLY` setzen. Der Zugriff wird über die Enterprise-App gesteuert
 (*Assignment required = Yes* + Nutzer/Gruppen zuweisen). **Break-glass:** die `GRAPH_*`-
 Variablen entfernen ⇒ Rückfall auf Passwort-Login.
+
+**App-Rolle erzwingen (optional):** In der App-Registrierung unter **App roles** eine
+Rolle anlegen (z. B. Wert `Analyzer.Read`), in der Enterprise-App Nutzer/Gruppen dieser
+Rolle zuweisen und `GRAPH_REQUIRED_ROLE=Analyzer.Read` setzen. Dann kommt nur rein, wer
+die Rolle im Token (`roles`-Claim) hat — alle anderen erhalten 403.
 
 ## Entwicklung
 

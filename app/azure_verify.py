@@ -40,3 +40,12 @@ def validate_token(token: str, tenant: str, client_id: str) -> dict:
     if claims.get("tid") != tenant:
         raise ValueError("tenant mismatch")
     return dict(claims)
+
+
+def has_role(claims: dict, required_role: str | None) -> bool:
+    """True, wenn keine Rolle verlangt wird oder die App-Rolle im roles-Claim steckt.
+    App-Rollen kommen im id_token als Array `roles` (Entra: App-Rollen der Registrierung,
+    Nutzer/Gruppen in der Enterprise-App zugewiesen)."""
+    if not required_role:
+        return True
+    return required_role in (claims.get("roles") or [])

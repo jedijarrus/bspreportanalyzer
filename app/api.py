@@ -192,6 +192,8 @@ def create_app(secret_key: str | None = None) -> FastAPI:
         except Exception:
             raise HTTPException(401, "SSO-Anmeldung fehlgeschlagen.")
         claims = token.get("userinfo") or {}
+        if not azure_verify.has_role(claims, config.azure_settings().get("required_role")):
+            raise HTTPException(403, "Zugriff verweigert – erforderliche App-Rolle fehlt.")
         request.session["auth"] = True
         request.session["user"] = claims.get("name") or claims.get("preferred_username") or claims.get("email")
         return RedirectResponse("/", status_code=303)
@@ -206,6 +208,8 @@ def create_app(secret_key: str | None = None) -> FastAPI:
             claims = azure_verify.validate_token(body.token, s["tenant"], s["client_id"])
         except Exception:
             raise HTTPException(401, "Token ungültig.")
+        if not azure_verify.has_role(claims, s.get("required_role")):
+            raise HTTPException(403, f"Zugriff verweigert – App-Rolle '{s['required_role']}' erforderlich.")
         request.session["auth"] = True
         request.session["user"] = claims.get("name") or claims.get("preferred_username") or claims.get("upn")
         return {"status": "ok"}

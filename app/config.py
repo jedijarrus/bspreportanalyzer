@@ -33,6 +33,8 @@ def azure_settings() -> dict[str, str | None]:
         "client_id": os.environ.get("GRAPH_CLIENT_ID") or None,
         "client_secret": os.environ.get("GRAPH_CLIENT_SECRET") or None,
         "base_url": os.environ.get("BSP_BASE_URL") or None,
+        # optional: nur Nutzer mit dieser App-Rolle (roles-Claim) dürfen rein
+        "required_role": os.environ.get("GRAPH_REQUIRED_ROLE") or None,
     }
 
 
