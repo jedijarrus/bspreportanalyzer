@@ -15,6 +15,7 @@
       <a class="navtab" data-route="vertraege" href="#/vertraege">Verträge</a>
       <a class="navtab" data-route="rechnungen" href="#/rechnungen">Rechnungen</a>
       <a class="navtab" data-route="controlling" href="#/controlling">Controlling</a>
+      <a class="navtab" data-route="mitarbeiter" href="#/mitarbeiter">Mitarbeiter</a>
     </nav>
     <div class="topbar-mid">
       <input type="search" id="search" placeholder="Rufnummer, Nutzer, Kostenstelle …" aria-label="Suche: Rufnummer, Nutzer oder Kostenstelle (Enter öffnet Monitoring)" autocomplete="off">
@@ -24,7 +25,7 @@
       <div class="netbrutto" id="netbrutto" hidden>
         <button class="nb-opt active" data-nb="netto">Netto</button><button class="nb-opt" data-nb="brutto">Brutto</button>
       </div>
-      <label class="btn btn-primary" title="Report (.xlsx) oder Rechnung (.csv)">
+      <label class="btn btn-primary" title="Report (.xlsx), Rechnung (.csv) oder Mitarbeiterliste (.xlsx: PersNr, Nachname, Vorname)">
         Laden
         <input type="file" id="fileInput" accept=".xlsx,.csv" multiple hidden>
       </label>
@@ -86,6 +87,9 @@
 
     <!-- Bereich 3: Controlling -->
     <div class="viewpane" id="view-controlling" hidden></div>
+
+    <!-- Bereich 4: Mitarbeiter-Abgleich -->
+    <div class="viewpane" id="view-mitarbeiter" hidden></div>
   </main>
 
   <!-- Detail-Drawer -->

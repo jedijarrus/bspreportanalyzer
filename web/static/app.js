@@ -498,7 +498,7 @@ function renderVertraege() {
 // ---- Router ---------------------------------------------------------------
 function currentRoute() {
   const [name, param] = location.hash.replace(/^#\/?/, "").split("/");
-  return { name: ["vertraege", "rechnungen", "controlling"].includes(name) ? name : "vertraege", param };
+  return { name: ["vertraege", "rechnungen", "controlling", "mitarbeiter"].includes(name) ? name : "vertraege", param };
 }
 function navigate() {
   if (!Array.isArray(state.all)) return;
@@ -516,15 +516,16 @@ function navigate() {
 function renderBase(name, param) {
   state.route = name;
   document.querySelectorAll(".navtab").forEach((t) => t.classList.toggle("active", t.dataset.route === name));
-  ["vertraege", "rechnungen", "controlling"].forEach((v) =>
+  ["vertraege", "rechnungen", "controlling", "mitarbeiter"].forEach((v) =>
     document.getElementById("view-" + v).hidden = v !== name);
   // Suche/Netto-Brutto nur in Verträgen relevant -> Suche ausblenden ausserhalb
   document.querySelector(".topbar-mid").style.visibility = (name === "vertraege" || name === "controlling") ? "visible" : "hidden";
-  // Netto/Brutto-Umschalter auf Rechnungen ausblenden — dort gelten die echten Rechnungsbeträge (fmtEur)
-  document.getElementById("netbrutto").style.visibility = name === "rechnungen" ? "hidden" : "visible";
+  // Netto/Brutto-Umschalter nur wo Geldbeträge stehen (nicht Rechnungen/Mitarbeiter)
+  document.getElementById("netbrutto").style.visibility = (name === "rechnungen" || name === "mitarbeiter") ? "hidden" : "visible";
   if (name === "vertraege") renderVertraege();
   else if (name === "rechnungen") renderRechnungen(param);
   else if (name === "controlling") renderControlling();
+  else if (name === "mitarbeiter") renderMitarbeiter();
 }
 window.addEventListener("hashchange", navigate);
 function clearRendered() {
@@ -884,6 +885,43 @@ async function renderControlling() {
   drawSeries("ctrlTrend", "line", trend.map((t) => fmtDate(t.period)), trend.map((t) => moneyNum(t.netto)), "€", trendClick);
   drawCtrlChart("ctrlRv", "bar", rv.map((x) => x.rahmenvertrag), rv.map((x) => moneyNum(x.netto)));
 }
+// ===== Bereich 4: Mitarbeiter-Abgleich ====================================
+async function renderMitarbeiter() {
+  const pane = document.getElementById("view-mitarbeiter");
+  pane.innerHTML = '<div class="page"><h1 class="page-title">Mitarbeiter</h1><div class="hint">lade …</div></div>';
+  const d = await api("/api/employees");
+  if (!d.count) {
+    pane.innerHTML = `<div class="page"><h1 class="page-title">Mitarbeiter</h1>
+      <div class="empty">Noch keine Mitarbeiterliste geladen — lade oben über <b>Laden</b> eine <b>.xlsx</b> mit den Spalten <b>PersNr, Nachname, Vorname</b> (aktive Belegschaft). Der Abgleich läuft gegen den neuesten Report; die Kostenstelle muss dafür die PersNr tragen.</div></div>`;
+    return;
+  }
+  const ov = d.mitarbeiter_ohne_vertrag || [];
+  const om = d.vertraege_ohne_mitarbeiter || [];
+  const kpis = [
+    ["Mitarbeiter (Liste)", String(d.count)],
+    ["Ohne Vertrag", String(ov.length)],
+    ["Verträge ohne akt. Mitarbeiter", String(om.length)],
+  ];
+  const ovHtml = ov.length
+    ? `<table class="grid-table"><thead><tr><th>PersNr</th><th>Nachname</th><th>Vorname</th></tr></thead>
+        <tbody>${ov.map((e) => `<tr><td>${esc(e.persnr || "")}</td><td>${esc(e.nachname || "–")}</td><td>${esc(e.vorname || "–")}</td></tr>`).join("")}</tbody></table>`
+    : '<div class="hint">Alle aktiven Mitarbeiter haben einen Vertrag. 👍</div>';
+  const omHtml = om.length
+    ? `<table class="grid-table"><thead><tr><th>Rufnummer</th><th>Kostenstelle</th><th>Nutzer laut Report</th><th>Rahmenvertrag</th><th>Tarif</th></tr></thead>
+        <tbody>${om.map((c) => `<tr class="linie-open" data-goto-ruf="${esc(c.rufnummer || "")}" title="Monitoring öffnen"><td>${esc(c.rufnummer || "")}</td><td>${esc(c.kostenstelle || "–")}</td><td>${esc(c.kostenstellennutzer || "–")}</td><td>${esc(c.rahmenvertrag || "–")}</td><td>${esc(c.tarif || "–")}</td></tr>`).join("")}</tbody></table>`
+    : '<div class="hint">Jeder Vertrag hat einen aktiven Mitarbeiter. 👍</div>';
+  pane.innerHTML = `
+    <div class="page">
+      <h1 class="page-title">Mitarbeiter <span class="muted">· Abgleich Liste ↔ Report</span></h1>
+      <div class="hint">Liste-Stand: ${d.stand ? esc(String(d.stand).slice(0, 16).replace("T", " ")) : "–"} · abgeglichen gegen Report ${fmtDate(d.report_stand)} · Schlüssel: PersNr = Kostenstelle</div>
+      <div class="kpis">${kpis.map(([l, v]) => `<div class="card"><div class="num">${v}</div><div class="lbl">${l}</div></div>`).join("")}</div>
+      <div class="section-title">Mitarbeiter ohne Vertrag <span class="muted">· ${ov.length}</span></div>
+      <div class="table-wrap" style="max-height:420px;overflow:auto">${ovHtml}</div>
+      <div class="section-title">Verträge ohne aktiven Mitarbeiter <span class="muted">· ${om.length} · Zeile klicken = Monitoring</span></div>
+      <div class="table-wrap" style="max-height:420px;overflow:auto">${omHtml}</div>
+    </div>`;
+}
+
 // Controlling-Monatswahl
 function setCtrlInvoice(id) { state.ctrlInvoiceId = id; renderControlling(); }
 function selectCtrlByPeriod(period) {
@@ -1063,7 +1101,7 @@ document.getElementById("fileInput").addEventListener("change", async (e) => {
   const input = e.target;
   const files = Array.from(input.files || []);
   if (!files.length) return;
-  let rep = 0, inv = 0, dup = 0;
+  let rep = 0, inv = 0, dup = 0, emp = 0, empCount = 0;
   const errs = [];
   input.disabled = true;                            // kein Doppel-Upload während des Ladens
   for (let i = 0; i < files.length; i++) {
@@ -1073,13 +1111,17 @@ document.getElementById("fileInput").addEventListener("change", async (e) => {
     const fd = new FormData(); fd.append("file", file);
     try {
       const r = await api(isInvoice ? "/api/invoices" : "/api/reports", { method: "POST", body: fd });
-      if (r.duplicate) dup++; else if (isInvoice) inv++; else rep++;
+      if (r.duplicate) dup++;
+      else if (r.type === "employees") { emp++; empCount = r.employee_count; }
+      else if (isInvoice) inv++;
+      else rep++;
     } catch (err) { errs.push(`${file.name}: ${err.message}`); }   // Grund je Datei merken
   }
   input.disabled = false;
   const parts = [];
   if (rep) parts.push(`${rep} Report${rep > 1 ? "s" : ""}`);
   if (inv) parts.push(`${inv} Rechnung${inv > 1 ? "en" : ""} geladen`);
+  if (emp) parts.push(`Mitarbeiterliste (${empCount})`);
   if (dup) parts.push(`${dup} Duplikat${dup > 1 ? "e" : ""} übersprungen`);
   const summary = parts.join(" · ") || (errs.length ? "" : "Nichts geladen");
   const msg = errs.length ? [summary, `${errs.length} Fehler: ${errs.join(" · ")}`].filter(Boolean).join(" — ") : summary;
@@ -1196,6 +1238,11 @@ document.getElementById("view-controlling").addEventListener("click", (e) => {
 });
 document.getElementById("view-controlling").addEventListener("change", (e) => {
   if (e.target.id === "ctrlMonth") setCtrlInvoice(+e.target.value);
+});
+// Rufnummer aus Mitarbeiter-Abgleich -> Monitoring öffnen
+document.getElementById("view-mitarbeiter").addEventListener("click", (e) => {
+  const el = e.target.closest("[data-goto-ruf]");
+  if (el && el.dataset.gotoRuf) gotoLinie(el.dataset.gotoRuf);
 });
 // Enter in der Suche: eindeutige Rufnummer -> direkt Monitoring öffnen
 document.getElementById("search").addEventListener("keydown", (e) => {

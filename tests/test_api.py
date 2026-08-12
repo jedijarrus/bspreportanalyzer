@@ -151,6 +151,42 @@ def _upload(client, rows=10, seed=0, name=None):
         )
 
 
+def _emp_xlsx(tmp_path, rows, name="Mitarbeiter.xlsx"):
+    import openpyxl
+    wb = openpyxl.Workbook()
+    ws = wb.active
+    ws.append(["PersNr", "Nachname", "Vorname"])
+    for r in rows:
+        ws.append(list(r))
+    p = tmp_path / name
+    wb.save(p)
+    return p
+
+
+def _post_xlsx(client, path, name):
+    with open(path, "rb") as f:
+        return client.post("/api/reports", files={"file": (
+            name, f.read(), "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")})
+
+
+def test_mitarbeiter_upload_und_abgleich(client, tmp_path):
+    _upload(client, rows=5)   # ein Report -> Flotte existiert
+    r = _post_xlsx(client, _emp_xlsx(tmp_path, [(1234, "Mustermann", "Martin"), (5678, "Neu", "Nadine")]), "Mitarbeiter.xlsx")
+    assert r.status_code == 201
+    assert r.json()["type"] == "employees" and r.json()["employee_count"] == 2
+
+    ab = client.get("/api/employees").json()
+    assert ab["count"] == 2 and ab["stand"]
+    # Generator-Kostenstellen sind "KST-..-.." -> keine PersNr matcht -> alle ohne Vertrag
+    assert {e["persnr"] for e in ab["mitarbeiter_ohne_vertrag"]} == {"1234", "5678"}
+    assert len(ab["vertraege_ohne_mitarbeiter"]) >= 1
+
+    # Re-Upload ersetzt die Liste komplett
+    _post_xlsx(client, _emp_xlsx(tmp_path, [(9999, "Einzig", "Ella")], name="m2.xlsx"), "m2.xlsx")
+    ab2 = client.get("/api/employees").json()
+    assert ab2["count"] == 1 and {e["persnr"] for e in ab2["mitarbeiter_ohne_vertrag"]} == {"9999"}
+
+
 # ---- Auth ----------------------------------------------------------------
 def test_version_endpoint(app_store):
     v = TestClient(app_store[0]).get("/api/version").json()

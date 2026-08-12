@@ -236,6 +236,41 @@ def normalize_rufnummer(r: Any) -> str | None:
     return d or None
 
 
+def _norm_id(v: Any) -> str | None:
+    """PersNr / Kostenstelle vergleichbar machen. '1234.0'->'1234',
+    numerisch ohne führende Nullen, sonst lower."""
+    if v in (None, ""):
+        return None
+    s = str(v).strip()
+    if s.endswith(".0"):
+        s = s[:-2]
+    return str(int(s)) if s.isdigit() else s.lower()
+
+
+def mitarbeiter_abgleich(employees: list[dict], contracts: list[dict]) -> dict:
+    """Aktive Mitarbeiter (PersNr) gegen die aktuelle Flotte abgleichen — über die
+    Kostenstelle (== PersNr). Liefert: Mitarbeiter ohne Vertrag und Verträge ohne
+    aktiven Mitarbeiter (Kostenstelle nicht in der Liste oder leer)."""
+    fleet = current_fleet(contracts)
+    kst = {k for c in fleet if (k := _norm_id(c.get("kostenstelle")))}
+    pers: dict[str, dict] = {}
+    for e in employees:
+        p = _norm_id(e.get("persnr"))
+        if p:
+            pers.setdefault(p, e)
+    ohne_vertrag = [{"persnr": e.get("persnr"), "nachname": e.get("nachname"), "vorname": e.get("vorname")}
+                    for p, e in pers.items() if p not in kst]
+    ohne_mitarbeiter = [{"rufnummer": c.get("rufnummer"), "kostenstelle": c.get("kostenstelle"),
+                         "kostenstellennutzer": c.get("kostenstellennutzer"),
+                         "rahmenvertrag": c.get("rahmenvertrag"), "tarif": c.get("tarif")}
+                        for c in fleet
+                        if not _norm_id(c.get("kostenstelle")) or _norm_id(c.get("kostenstelle")) not in pers]
+    ohne_vertrag.sort(key=lambda e: ((e.get("nachname") or "").lower(), (e.get("vorname") or "").lower()))
+    ohne_mitarbeiter.sort(key=lambda c: ((c.get("kostenstelle") or ""), (c.get("rufnummer") or "")))
+    return {"mitarbeiter_ohne_vertrag": ohne_vertrag, "vertraege_ohne_mitarbeiter": ohne_mitarbeiter,
+            "n_mitarbeiter": len(pers), "n_vertraege": len(fleet)}
+
+
 # ---- Rechnungs-/Kostenauswertungen ---------------------------------------
 def _amt(line: dict) -> float:
     v = line.get("amount")

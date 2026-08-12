@@ -245,6 +245,25 @@ def test_kosten_je_position_gruppiert_je_kategorie_und_positionsname():
     assert [c["category"] for c in out] == ["grundpreis", "option", "rabatt"]
 
 
+def test_mitarbeiter_abgleich_ueber_kostenstelle():
+    contracts = [
+        {"rahmenvertrag": "RV", "_report_date": "2026-08-01", "_report_id": 1, "rufnummer": "015111",
+         "kostenstelle": "1234", "kostenstellennutzer": "Mustermann, Martin", "tarif": "T"},
+        {"rahmenvertrag": "RV", "_report_date": "2026-08-01", "_report_id": 1, "rufnummer": "015122",
+         "kostenstelle": "9999", "kostenstellennutzer": "Weg, Wer", "tarif": "T"},
+        {"rahmenvertrag": "RV", "_report_date": "2026-08-01", "_report_id": 1, "rufnummer": "015133",
+         "kostenstelle": None, "kostenstellennutzer": None, "tarif": "T"},
+    ]
+    employees = [
+        {"persnr": "1234", "nachname": "Mustermann", "vorname": "Martin"},  # hat Vertrag (KSt 1234)
+        {"persnr": "5678", "nachname": "Neu", "vorname": "Nadine"},         # kein Vertrag
+    ]
+    r = analytics.mitarbeiter_abgleich(employees, contracts)
+    assert [e["persnr"] for e in r["mitarbeiter_ohne_vertrag"]] == ["5678"]
+    assert {c["rufnummer"] for c in r["vertraege_ohne_mitarbeiter"]} == {"015122", "015133"}  # 9999 fehlt, C ohne KSt
+    assert r["n_mitarbeiter"] == 2 and r["n_vertraege"] == 3
+
+
 def test_konsum_je_rufnummer_datenpaesse_getrennt_und_keyword_gefiltert():
     lines = [
         _il(rufnummer="0151A", kostenstellennutzer="Max", category="option", item_name="SpeedOn 3 GB", amount=6.99),

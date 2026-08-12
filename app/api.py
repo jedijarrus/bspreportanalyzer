@@ -21,7 +21,7 @@ from pydantic import BaseModel
 from starlette.middleware.sessions import SessionMiddleware
 from starlette.requests import Request
 
-from app import analytics, auth, azure_verify, config, invoice_parser, parser, version
+from app import analytics, auth, azure_verify, config, employee_parser, invoice_parser, parser, version
 from app.store import Store
 
 WEB_DIR = Path(__file__).resolve().parents[1] / "web"
@@ -229,6 +229,17 @@ def create_app(secret_key: str | None = None) -> FastAPI:
         config.UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
         dest = config.UPLOAD_DIR / safe_name
         dest.write_bytes(content)
+        # Mitarbeiterliste (PersNr/Nachname/Vorname) statt Report? -> Belegschaft ersetzen
+        if employee_parser.is_employee_workbook(dest):
+            try:
+                emps = employee_parser.parse_employees(dest)
+            except Exception:
+                dest.unlink(missing_ok=True)
+                raise HTTPException(400, "Mitarbeiterliste konnte nicht gelesen werden.")
+            dest.unlink(missing_ok=True)   # PII-Datei nicht behalten, Daten liegen in der DB
+            n = db.replace_employees(emps)
+            db.set_setting("employees_stand", dt.datetime.now().isoformat(timespec="seconds"))
+            return {"type": "employees", "employee_count": n, "duplicate": False}
         try:
             data = parser.parse_report(dest)
         except Exception:
@@ -246,6 +257,19 @@ def create_app(secret_key: str | None = None) -> FastAPI:
     @app.get("/api/reports", dependencies=[Depends(require_auth)])
     def list_reports(db: Store = Depends(get_store)):
         return db.list_reports()
+
+    @app.get("/api/employees", dependencies=[Depends(require_auth)])
+    def employees_abgleich(db: Store = Depends(get_store)):
+        emps = db.list_employees()
+        abgleich = analytics.mitarbeiter_abgleich(emps, db.all_contracts())
+        reps = db.list_reports()
+        report_stand = max((r.get("report_date") or "" for r in reps), default="") or None
+        return {
+            "stand": db.get_setting("employees_stand"),
+            "count": len(emps),
+            "report_stand": report_stand,
+            **abgleich,
+        }
 
     @app.get("/api/notes", dependencies=[Depends(require_auth)])
     def get_notes(db: Store = Depends(get_store)):

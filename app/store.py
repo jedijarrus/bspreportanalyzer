@@ -72,6 +72,10 @@ class Store:
         self.con.execute(
             "CREATE TABLE IF NOT EXISTS notes (key TEXT PRIMARY KEY, note TEXT NOT NULL)"
         )
+        # Aktive Mitarbeiter (Abgleich gegen Report über PersNr = Kostenstelle)
+        self.con.execute(
+            "CREATE TABLE IF NOT EXISTS employees (persnr TEXT PRIMARY KEY, nachname TEXT, vorname TEXT)"
+        )
         # Rechnungen (Telekom-CSV) + Positionen
         self.con.execute(
             """
@@ -120,6 +124,21 @@ class Store:
         else:
             self.con.execute("DELETE FROM notes WHERE key = ?", (key,))
         self.con.commit()
+
+    # ---- Mitarbeiter (aktive Belegschaft, ersetzt sich bei Upload) ------
+    def replace_employees(self, rows: list[dict[str, Any]]) -> int:
+        """Ganze Liste ersetzen (aktueller Stand). Nur Zeilen mit PersNr. Gibt Anzahl zurück."""
+        self.con.execute("DELETE FROM employees")
+        data = [(r.get("persnr"), r.get("nachname"), r.get("vorname"))
+                for r in rows if r.get("persnr")]
+        self.con.executemany(
+            "INSERT OR REPLACE INTO employees (persnr, nachname, vorname) VALUES (?, ?, ?)", data)
+        self.con.commit()
+        return self.con.execute("SELECT COUNT(*) AS n FROM employees").fetchone()["n"]
+
+    def list_employees(self) -> list[dict[str, Any]]:
+        return [dict(r) for r in self.con.execute(
+            "SELECT persnr, nachname, vorname FROM employees ORDER BY nachname, vorname")]
 
     # ---- Schlüssel/Wert-Einstellungen (z.B. Passwort-Hash) --------------
     def get_setting(self, key: str) -> str | None:
