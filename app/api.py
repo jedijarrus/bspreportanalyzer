@@ -209,7 +209,7 @@ def create_app(secret_key: str | None = None) -> FastAPI:
         except Exception:
             raise HTTPException(401, "Token ungültig.")
         if not azure_verify.has_role(claims, s.get("required_role")):
-            raise HTTPException(403, f"Zugriff verweigert – App-Rolle '{s['required_role']}' erforderlich.")
+            raise HTTPException(403, f"Zugriff verweigert – erforderliche App-Rolle fehlt (eine von: {s['required_role']}).")
         request.session["auth"] = True
         request.session["user"] = claims.get("name") or claims.get("preferred_username") or claims.get("upn")
         return {"status": "ok"}

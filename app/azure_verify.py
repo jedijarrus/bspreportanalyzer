@@ -7,6 +7,7 @@ die Session gesetzt. JWKS werden 1 h gecacht.
 """
 from __future__ import annotations
 
+import re
 import time
 
 import httpx
@@ -42,10 +43,20 @@ def validate_token(token: str, tenant: str, client_id: str) -> dict:
     return dict(claims)
 
 
-def has_role(claims: dict, required_role: str | None) -> bool:
-    """True, wenn keine Rolle verlangt wird oder die App-Rolle im roles-Claim steckt.
-    App-Rollen kommen im id_token als Array `roles` (Entra: App-Rollen der Registrierung,
-    Nutzer/Gruppen in der Enterprise-App zugewiesen)."""
+def _split_roles(required_role: str | None) -> list[str]:
+    """Erlaubte Rollen aus dem ENV-Wert: mehrere per Komma/Semikolon/Leerraum getrennt
+    (z. B. 'Analyzer.Read, Analyzer.Admin')."""
     if not required_role:
+        return []
+    return [r.strip() for r in re.split(r"[,;\s]+", required_role) if r.strip()]
+
+
+def has_role(claims: dict, required_role: str | None) -> bool:
+    """True, wenn keine Rolle verlangt wird oder der Nutzer MINDESTENS EINE der
+    erlaubten App-Rollen im `roles`-Claim hat. App-Rollen: in der App-Registrierung
+    anlegen, in der Enterprise-App Nutzern/Gruppen zuweisen."""
+    allowed = _split_roles(required_role)
+    if not allowed:
         return True
-    return required_role in (claims.get("roles") or [])
+    roles = claims.get("roles") or []
+    return any(r in roles for r in allowed)

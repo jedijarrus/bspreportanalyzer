@@ -910,6 +910,16 @@ async function renderMitarbeiter() {
     ? `<table class="grid-table"><thead><tr><th>Rufnummer</th><th>Kostenstelle</th><th>Nutzer laut Report</th><th>Rahmenvertrag</th><th>Tarif</th></tr></thead>
         <tbody>${om.map((c) => `<tr class="linie-open" data-goto-ruf="${esc(c.rufnummer || "")}" title="Monitoring öffnen"><td>${esc(c.rufnummer || "")}</td><td>${esc(c.kostenstelle || "–")}</td><td>${esc(c.kostenstellennutzer || "–")}</td><td>${esc(c.rahmenvertrag || "–")}</td><td>${esc(c.tarif || "–")}</td></tr>`).join("")}</tbody></table>`
     : '<div class="hint">Jeder Vertrag hat einen aktiven Mitarbeiter. 👍</div>';
+  const dl = d.dubletten_liste || [], dr = d.dubletten_report || [];
+  const poolHint = `Pool-Kostenstelle ${esc(d.pool_kostenstelle || "9000")} ausgenommen`;
+  const dlHtml = dl.length
+    ? `<table class="grid-table"><thead><tr><th>PersNr</th><th class="num">Anzahl</th><th>Namen</th></tr></thead>
+        <tbody>${dl.map((x) => `<tr><td>${esc(x.persnr || "")}</td><td class="num">${x.count}</td><td>${esc((x.namen || []).join(" · "))}</td></tr>`).join("")}</tbody></table>`
+    : '<div class="hint">Keine doppelten Kostenstellen in der Liste. 👍</div>';
+  const drHtml = dr.length
+    ? `<table class="grid-table"><thead><tr><th>Kostenstelle</th><th class="num">Anzahl</th><th>Rufnummern</th></tr></thead>
+        <tbody>${dr.map((x) => `<tr><td>${esc(x.kostenstelle || "")}</td><td class="num">${x.count}</td><td>${(x.rufnummern || []).map((r) => `<span class="chip linie-open" data-goto-ruf="${esc(r || "")}">${esc(r || "")}</span>`).join(" ")}</td></tr>`).join("")}</tbody></table>`
+    : '<div class="hint">Keine doppelten Kostenstellen im Report. 👍</div>';
   pane.innerHTML = `
     <div class="page">
       <h1 class="page-title">Mitarbeiter <span class="muted">· Abgleich Liste ↔ Report</span></h1>
@@ -919,6 +929,17 @@ async function renderMitarbeiter() {
       <div class="table-wrap" style="max-height:420px;overflow:auto">${ovHtml}</div>
       <div class="section-title">Verträge ohne aktiven Mitarbeiter <span class="muted">· ${om.length} · Zeile klicken = Monitoring</span></div>
       <div class="table-wrap" style="max-height:420px;overflow:auto">${omHtml}</div>
+
+      <div class="section-grid">
+        <div>
+          <div class="section-title">Doppelte Kostenstellen · Mitarbeiterliste <span class="muted">· ${dl.length} · ${poolHint}</span></div>
+          <div class="table-wrap" style="max-height:340px;overflow:auto">${dlHtml}</div>
+        </div>
+        <div>
+          <div class="section-title">Doppelte Kostenstellen · Report <span class="muted">· ${dr.length} · ${poolHint} · Chip klicken = Monitoring</span></div>
+          <div class="table-wrap" style="max-height:340px;overflow:auto">${drHtml}</div>
+        </div>
+      </div>
     </div>`;
 }
 

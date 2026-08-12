@@ -264,6 +264,29 @@ def test_mitarbeiter_abgleich_ueber_kostenstelle():
     assert r["n_mitarbeiter"] == 2 and r["n_vertraege"] == 3
 
 
+def test_mitarbeiter_abgleich_dubletten_mit_pool_ausnahme():
+    def c(ruf, kst):
+        return {"rahmenvertrag": "RV", "_report_date": "2026-08-01", "_report_id": 1,
+                "rufnummer": ruf, "kostenstelle": kst, "kostenstellennutzer": "N", "tarif": "T"}
+    contracts = [
+        c("015111", "1234"), c("015122", "1234"),   # KSt 1234 doppelt im Report -> Dublette
+        c("015130", "9000"), c("015131", "9000"),   # Pool 9000 -> KEINE Dublette
+        c("015140", "7777"),
+    ]
+    employees = [
+        {"persnr": "1234", "nachname": "A", "vorname": "a"},
+        {"persnr": "1234", "nachname": "B", "vorname": "b"},   # PersNr doppelt -> Dublette
+        {"persnr": "9000", "nachname": "Pool", "vorname": ""},
+        {"persnr": "9000", "nachname": "Pool2", "vorname": ""},  # Pool -> KEINE Dublette
+        {"persnr": "7777", "nachname": "C", "vorname": "c"},
+    ]
+    r = analytics.mitarbeiter_abgleich(employees, contracts)
+    assert [d["kostenstelle"] for d in r["dubletten_report"]] == ["1234"]
+    assert r["dubletten_report"][0]["count"] == 2
+    assert [d["persnr"] for d in r["dubletten_liste"]] == ["1234"]
+    assert r["dubletten_liste"][0]["count"] == 2
+
+
 def test_konsum_je_rufnummer_datenpaesse_getrennt_und_keyword_gefiltert():
     lines = [
         _il(rufnummer="0151A", kostenstellennutzer="Max", category="option", item_name="SpeedOn 3 GB", amount=6.99),

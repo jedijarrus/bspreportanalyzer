@@ -236,6 +236,11 @@ def normalize_rufnummer(r: Any) -> str | None:
     return d or None
 
 
+# Sammel-/Pool-Kostenstelle: hier sind Mehrfachbelegungen normal -> von der
+# Dubletten-Prüfung ausgenommen.
+POOL_KOSTENSTELLE = "9000"
+
+
 def _norm_id(v: Any) -> str | None:
     """PersNr / Kostenstelle vergleichbar machen. '1234.0'->'1234',
     numerisch ohne führende Nullen, sonst lower."""
@@ -267,7 +272,35 @@ def mitarbeiter_abgleich(employees: list[dict], contracts: list[dict]) -> dict:
                         if not _norm_id(c.get("kostenstelle")) or _norm_id(c.get("kostenstelle")) not in pers]
     ohne_vertrag.sort(key=lambda e: ((e.get("nachname") or "").lower(), (e.get("vorname") or "").lower()))
     ohne_mitarbeiter.sort(key=lambda c: ((c.get("kostenstelle") or ""), (c.get("rufnummer") or "")))
+
+    # Dubletten (Pool 9000 ausgenommen): Kostenstelle mehrfach im Report bzw. PersNr
+    # mehrfach in der Mitarbeiterliste — Datenqualität, bricht die 1:1-Zuordnung.
+    pool = _norm_id(POOL_KOSTENSTELLE)
+    rep_grp: dict[str, list] = {}
+    for c in fleet:
+        k = _norm_id(c.get("kostenstelle"))
+        if k and k != pool:
+            rep_grp.setdefault(k, []).append(c)
+    dubletten_report = sorted(
+        [{"kostenstelle": g[0].get("kostenstelle"), "count": len(g),
+          "rufnummern": [x.get("rufnummer") for x in g],
+          "nutzer": [x.get("kostenstellennutzer") for x in g]}
+         for g in rep_grp.values() if len(g) > 1],
+        key=lambda d: -d["count"])
+    list_grp: dict[str, list] = {}
+    for e in employees:
+        p = _norm_id(e.get("persnr"))
+        if p and p != pool:
+            list_grp.setdefault(p, []).append(e)
+    dubletten_liste = sorted(
+        [{"persnr": g[0].get("persnr"), "count": len(g),
+          "namen": [f"{(x.get('nachname') or '').strip()} {(x.get('vorname') or '').strip()}".strip() for x in g]}
+         for g in list_grp.values() if len(g) > 1],
+        key=lambda d: -d["count"])
+
     return {"mitarbeiter_ohne_vertrag": ohne_vertrag, "vertraege_ohne_mitarbeiter": ohne_mitarbeiter,
+            "dubletten_report": dubletten_report, "dubletten_liste": dubletten_liste,
+            "pool_kostenstelle": POOL_KOSTENSTELLE,
             "n_mitarbeiter": len(pers), "n_vertraege": len(fleet)}
 
 

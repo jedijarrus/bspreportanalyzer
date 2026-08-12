@@ -72,9 +72,15 @@ class Store:
         self.con.execute(
             "CREATE TABLE IF NOT EXISTS notes (key TEXT PRIMARY KEY, note TEXT NOT NULL)"
         )
-        # Aktive Mitarbeiter (Abgleich gegen Report über PersNr = Kostenstelle)
+        # Aktive Mitarbeiter (Abgleich gegen Report über PersNr = Kostenstelle).
+        # Alte Version hatte persnr als PRIMARY KEY -> Dubletten gingen verloren. Für die
+        # Dubletten-Prüfung ALLE Zeilen speichern; ggf. migrieren (Liste ist re-uploadbar).
+        emp_cols = [r["name"] for r in self.con.execute("PRAGMA table_info(employees)")]
+        if emp_cols and "id" not in emp_cols:
+            self.con.execute("DROP TABLE employees")
         self.con.execute(
-            "CREATE TABLE IF NOT EXISTS employees (persnr TEXT PRIMARY KEY, nachname TEXT, vorname TEXT)"
+            "CREATE TABLE IF NOT EXISTS employees "
+            "(id INTEGER PRIMARY KEY AUTOINCREMENT, persnr TEXT, nachname TEXT, vorname TEXT)"
         )
         # Rechnungen (Telekom-CSV) + Positionen
         self.con.execute(
@@ -131,8 +137,9 @@ class Store:
         self.con.execute("DELETE FROM employees")
         data = [(r.get("persnr"), r.get("nachname"), r.get("vorname"))
                 for r in rows if r.get("persnr")]
+        # ALLE Zeilen einfügen (auch doppelte PersNr) -> Dubletten bleiben prüfbar
         self.con.executemany(
-            "INSERT OR REPLACE INTO employees (persnr, nachname, vorname) VALUES (?, ?, ?)", data)
+            "INSERT INTO employees (persnr, nachname, vorname) VALUES (?, ?, ?)", data)
         self.con.commit()
         return self.con.execute("SELECT COUNT(*) AS n FROM employees").fetchone()["n"]
 
