@@ -16,6 +16,11 @@ services:
       - GRAPH_CLIENT_ID=${GRAPH_CLIENT_ID:-}
       - GRAPH_CLIENT_SECRET=${GRAPH_CLIENT_SECRET:-}
       - GRAPH_REQUIRED_ROLE=${GRAPH_REQUIRED_ROLE:-}
+      - GLPI_URL=${GLPI_URL:-}
+      - GLPI_CLIENT_ID=${GLPI_CLIENT_ID:-}
+      - GLPI_CLIENT_SECRET=${GLPI_CLIENT_SECRET:-}
+      - GLPI_USERNAME=${GLPI_USERNAME:-}
+      - GLPI_PASSWORD=${GLPI_PASSWORD:-}
     volumes:
       # Echte Daten leben NUR hier auf dem Host — nie im Image, nie im Repo
       - ./data:/data

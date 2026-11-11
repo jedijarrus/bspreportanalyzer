@@ -10,7 +10,9 @@ zusätzlich datetime/date.
 from __future__ import annotations
 
 import datetime as dt
+import difflib
 import re
+import unicodedata
 from collections import Counter
 from typing import Any
 
@@ -302,6 +304,171 @@ def mitarbeiter_abgleich(employees: list[dict], contracts: list[dict]) -> dict:
             "dubletten_report": dubletten_report, "dubletten_liste": dubletten_liste,
             "pool_kostenstelle": POOL_KOSTENSTELLE,
             "n_mitarbeiter": len(pers), "n_vertraege": len(fleet)}
+
+
+# ---- GLPI-Abgleich -------------------------------------------------------
+# Kartennummer im Report: "8-94902-00001-23456789-0\123" — 20 Ziffern, hinter dem
+# Backslash ein Zusatz. GLPI führt als Seriennummer meist nur das Ende
+# ("00001-23456789-0"), manchmal mit einer Null mehr oder weniger oder die ganze
+# Nummer. Eine Karte gilt als dieselbe, wenn die Ziffern der GLPI-Seriennummer ohne
+# führende Nullen das Ende der Telekom-Ziffern sind — ab GLPI_MIN_SERIAL solchen
+# Ziffern; kürzere Seriennummern gelten als unlesbar.
+GLPI_MIN_SERIAL = 10
+CARD_FIELDS = ([("karten_profilnummer", "Hauptkarte")]
+               + [(f"multisim_karten_profilnummer_{i}", f"MultiSIM {i}") for i in range(1, 11)]
+               + [("combicard_profilnummer", "CombiCard")])
+_FOLD = str.maketrans({"ä": "ae", "ö": "oe", "ü": "ue", "ß": "ss"})
+
+
+def card_digits(value: Any) -> str:
+    """Ziffern einer Karten-/Profilnummer ohne den Zusatz hinter dem Backslash."""
+    return re.sub(r"\D", "", str(value or "").split("\\")[0])
+
+
+def _name_tokens(name: str) -> set[str]:
+    """Namensteile klein, Umlaute als ae/oe/ue/ss, andere Akzente weg (é -> e)."""
+    s = (name or "").lower().translate(_FOLD)
+    s = "".join(ch for ch in unicodedata.normalize("NFKD", s) if not unicodedata.combining(ch))
+    return set(re.findall(r"[a-z]+", s))
+
+
+def _user_tokens(user: dict) -> set[str]:
+    t = _name_tokens(f"{user.get('realname') or ''} {user.get('firstname') or ''}")
+    return t or _name_tokens(re.sub(r"[._@-]", " ", (user.get("username") or "").split("@")[0]))
+
+
+def _similar_names(a: set[str], b: set[str]) -> bool:
+    """Jeder Namensteil der kürzeren Seite hat auf der anderen ein sehr ähnliches
+    Gegenstück (Tippfehler wie Torben/Torbin, vertauschte Buchstaben wie Mae/Mea) —
+    dann ist es eine Schreibweise."""
+    small, big = (a, b) if len(a) <= len(b) else (b, a)
+    return bool(small) and all(
+        any(sorted(t) == sorted(u) or difflib.SequenceMatcher(None, t, u).ratio() >= 0.8 for u in big) for t in small)
+
+
+def glpi_user_name(user: dict | None) -> str | None:
+    """„Nachname, Vorname" eines GLPI-Benutzers, sonst sein Benutzername."""
+    if not user:
+        return None
+    real, first = (user.get("realname") or "").strip(), (user.get("firstname") or "").strip()
+    if real or first:
+        return ", ".join(x for x in (real, first) if x)
+    return user.get("username") or None
+
+
+def same_person(telekom_name: str, user: dict | None) -> bool:
+    """Ob der Nutzer laut Report und der GLPI-Benutzer dieselbe Person sind: die
+    Namensteile (Umlaute gefaltet) des einen sind alle im anderen enthalten."""
+    if not user:
+        return False
+    a, b = _name_tokens(telekom_name), _user_tokens(user)
+    return bool(a) and bool(b) and (a <= b or b <= a)
+
+
+def name_mismatch(telekom_name: str, user: dict | None) -> str | None:
+    """Art der Abweichung zwischen Nutzer laut Report und GLPI-Benutzer, None wenn gleich:
+    „kein Benutzer", „Schreibweise" (Tippfehler) oder „andere Person"."""
+    if not user:
+        return "kein Benutzer"
+    if same_person(telekom_name, user):
+        return None
+    return "Schreibweise" if _similar_names(_name_tokens(telekom_name), _user_tokens(user)) else "andere Person"
+
+
+def glpi_abgleich(contracts: list[dict], snap: dict) -> dict:
+    """Aktuelle Flotte gegen einen GLPI-Snapshot (glpi_client.fetch_snapshot).
+
+    Schlüssel: Rufnummer (Leitung) und SIM-Kartennummer (Ende der Telekom-Nummer =
+    GLPI-Seriennummer). In GLPI gelöschte Einträge zählen nicht. Pool-Verträge
+    (Kostenstelle 9000) und Verträge ohne Nutzer gehen nicht in den Namensvergleich.
+    """
+    fleet = current_fleet(contracts)
+    users = snap.get("users") or {}
+
+    def user_of(uid):
+        return users.get(str(uid)) if uid else None
+
+    lines = [ln for ln in snap.get("lines") or [] if not ln.get("deleted")]
+    sims = [s for s in snap.get("sims") or [] if not s.get("deleted")]
+    line_by_id = {ln["id"]: ln for ln in lines}
+    gl_by_nr: dict[str, dict] = {}
+    for ln in lines:
+        nr = normalize_rufnummer(ln.get("nr"))
+        if nr:
+            gl_by_nr.setdefault(nr, ln)
+    tk_by_nr = {nr: c for c in fleet if (nr := normalize_rufnummer(c.get("rufnummer")))}
+
+    # ---- Rufnummern
+    nur_telekom = [{"rufnummer": c.get("rufnummer"), "nutzer": c.get("kostenstellennutzer"),
+                    "rahmenvertrag": c.get("rahmenvertrag"), "tarif": c.get("tarif")}
+                   for nr, c in tk_by_nr.items() if nr not in gl_by_nr]
+    nur_glpi = [{"rufnummer": ln.get("nr"), "glpi_benutzer": glpi_user_name(user_of(ln.get("user_id"))),
+                 "line_id": ln.get("id")}
+                for nr, ln in gl_by_nr.items() if nr not in tk_by_nr]
+    pool = _norm_id(POOL_KOSTENSTELLE)
+    benutzer = []
+    for nr, c in tk_by_nr.items():
+        ln = gl_by_nr.get(nr)
+        tk_name = (c.get("kostenstellennutzer") or "").strip()
+        if not ln or not tk_name or tk_name.lower() == "pool" or _norm_id(c.get("kostenstelle")) == pool:
+            continue
+        u = user_of(ln.get("user_id"))
+        art = name_mismatch(tk_name, u)
+        if art:
+            benutzer.append({"rufnummer": c.get("rufnummer"), "nutzer_telekom": tk_name,
+                             "nutzer_glpi": glpi_user_name(u), "art": art, "line_id": ln.get("id")})
+
+    # ---- SIM-Karten
+    tk_cards: dict[str, dict] = {}
+    for c in fleet:
+        for field, art in CARD_FIELDS:
+            d = card_digits(c.get(field))
+            if len(d) >= GLPI_MIN_SERIAL:
+                tk_cards.setdefault(d, {"karte": c.get(field), "art": art, "rufnummer": c.get("rufnummer"),
+                                        "nutzer": c.get("kostenstellennutzer")})
+    by_suffix: dict[str, str] = {}
+    for d in tk_cards:
+        for n in range(GLPI_MIN_SERIAL, len(d) + 1):
+            by_suffix.setdefault(d[-n:].lstrip("0"), d)
+    matched: set[str] = set()
+    sim_nur_glpi, sim_falsche_leitung, sim_ohne_leitung = [], [], []
+    for s in sims:
+        g = re.sub(r"\D", "", s.get("serial") or "").lstrip("0")
+        line = line_by_id.get(s.get("line_id"))
+        row = {"serial": s.get("serial"), "sim_id": s.get("id"), "modell": s.get("model"),
+               "glpi_rufnummer": line.get("nr") if line else None,
+               "glpi_benutzer": glpi_user_name(user_of(s.get("user_id"))),
+               "line_id": line.get("id") if line else None}
+        d = by_suffix.get(g) if len(g) >= GLPI_MIN_SERIAL else None
+        if not d:
+            sim_nur_glpi.append({**row, "unlesbar": len(g) < GLPI_MIN_SERIAL})
+            continue
+        matched.add(d)
+        t = tk_cards[d]
+        row = {**row, "telekom_rufnummer": t["rufnummer"], "art": t["art"]}
+        if not line:
+            sim_ohne_leitung.append(row)
+        elif normalize_rufnummer(line.get("nr")) != normalize_rufnummer(t["rufnummer"]):
+            sim_falsche_leitung.append(row)
+    sim_fehlt = [t for d, t in tk_cards.items() if d not in matched]
+
+    def by_nr(key):
+        return lambda x: (normalize_rufnummer(x.get(key)) or "", str(x.get("serial") or x.get("karte") or ""))
+
+    nur_telekom.sort(key=by_nr("rufnummer"))
+    nur_glpi.sort(key=by_nr("rufnummer"))
+    art_rang = {"andere Person": 0, "kein Benutzer": 1, "Schreibweise": 2}
+    benutzer.sort(key=lambda x: (art_rang[x["art"]], normalize_rufnummer(x.get("rufnummer")) or ""))
+    sim_fehlt.sort(key=by_nr("rufnummer"))
+    sim_nur_glpi.sort(key=lambda x: (x["unlesbar"], str(x.get("serial") or "")))
+    sim_falsche_leitung.sort(key=by_nr("telekom_rufnummer"))
+    sim_ohne_leitung.sort(key=by_nr("telekom_rufnummer"))
+    return {"nummer_nur_telekom": nur_telekom, "nummer_nur_glpi": nur_glpi, "benutzer_abweichend": benutzer,
+            "sim_fehlt_in_glpi": sim_fehlt, "sim_nur_glpi": sim_nur_glpi,
+            "sim_falsche_leitung": sim_falsche_leitung, "sim_ohne_leitung": sim_ohne_leitung,
+            "n_vertraege": len(tk_by_nr), "n_leitungen": len(gl_by_nr),
+            "n_beide": len(set(tk_by_nr) & set(gl_by_nr)),
+            "n_karten_telekom": len(tk_cards), "n_karten_glpi": len(sims), "n_karten_beide": len(matched)}
 
 
 # ---- Rechnungs-/Kostenauswertungen ---------------------------------------

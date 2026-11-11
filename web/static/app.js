@@ -498,7 +498,7 @@ function renderVertraege() {
 // ---- Router ---------------------------------------------------------------
 function currentRoute() {
   const [name, param] = location.hash.replace(/^#\/?/, "").split("/");
-  return { name: ["vertraege", "rechnungen", "controlling", "mitarbeiter"].includes(name) ? name : "vertraege", param };
+  return { name: ["vertraege", "rechnungen", "controlling", "mitarbeiter", "glpi"].includes(name) ? name : "vertraege", param };
 }
 function navigate() {
   if (!Array.isArray(state.all)) return;
@@ -516,16 +516,17 @@ function navigate() {
 function renderBase(name, param) {
   state.route = name;
   document.querySelectorAll(".navtab").forEach((t) => t.classList.toggle("active", t.dataset.route === name));
-  ["vertraege", "rechnungen", "controlling", "mitarbeiter"].forEach((v) =>
+  ["vertraege", "rechnungen", "controlling", "mitarbeiter", "glpi"].forEach((v) =>
     document.getElementById("view-" + v).hidden = v !== name);
   // Suche/Netto-Brutto nur in Verträgen relevant -> Suche ausblenden ausserhalb
   document.querySelector(".topbar-mid").style.visibility = (name === "vertraege" || name === "controlling") ? "visible" : "hidden";
   // Netto/Brutto-Umschalter nur wo Geldbeträge stehen (nicht Rechnungen/Mitarbeiter)
-  document.getElementById("netbrutto").style.visibility = (name === "rechnungen" || name === "mitarbeiter") ? "hidden" : "visible";
+  document.getElementById("netbrutto").style.visibility = (name === "rechnungen" || name === "mitarbeiter" || name === "glpi") ? "hidden" : "visible";
   if (name === "vertraege") renderVertraege();
   else if (name === "rechnungen") renderRechnungen(param);
   else if (name === "controlling") renderControlling();
   else if (name === "mitarbeiter") renderMitarbeiter();
+  else if (name === "glpi") renderGlpi();
 }
 window.addEventListener("hashchange", navigate);
 function clearRendered() {
@@ -943,6 +944,93 @@ async function renderMitarbeiter() {
     </div>`;
 }
 
+// ===== Bereich 5: GLPI-Abgleich ===========================================
+// Aktuelle Flotte (neuester Report je Rahmenvertrag) gegen den zuletzt aus GLPI
+// geladenen Stand: Rufnummer = Leitung, Telekom-Kartennummer = SIM-Seriennummer.
+async function renderGlpi() {
+  const pane = document.getElementById("view-glpi");
+  const title = '<h1 class="page-title">GLPI <span class="muted">· Abgleich Report ↔ GLPI</span></h1>';
+  pane.innerHTML = `<div class="page">${title}<div class="hint">lade …</div></div>`;
+  let d;
+  try { d = await api("/api/glpi"); } catch (e) { pane.innerHTML = `<div class="page">${title}<div class="empty">${esc(e.message)}</div></div>`; return; }
+  if (!d.configured) {
+    pane.innerHTML = `<div class="page">${title}
+      <div class="empty">GLPI ist nicht eingerichtet. Es fehlen die Umgebungsvariablen <b>${(d.missing || []).map(esc).join(", ")}</b>.
+      Benötigt wird ein OAuth-Client in GLPI (Grant „Password“, Scope <b>api</b>) und ein Benutzer mit Leserechten.</div></div>`;
+    return;
+  }
+  const refreshBtn = '<button class="btn" id="glpiRefresh">Aus GLPI neu laden</button>';
+  if (!d.stand) {
+    pane.innerHTML = `<div class="page">${title}
+      <div class="empty">Noch kein Stand aus GLPI geladen.<br><br>${refreshBtn}</div></div>`;
+    return;
+  }
+  const web = d.glpi_web || "";
+  const lineLink = (id) => (id && web ? `<a href="${esc(web)}/front/line.form.php?id=${encodeURIComponent(id)}" target="_blank" rel="noopener">Leitung ${esc(id)}</a>` : "–");
+  const simLink = (id) => (id && web ? `<a href="${esc(web)}/front/item_devicesimcard.form.php?id=${encodeURIComponent(id)}" target="_blank" rel="noopener">SIM ${esc(id)}</a>` : "–");
+  const ruf = (r) => (r ? `<span class="chip linie-open" data-goto-ruf="${esc(r)}" title="Monitoring öffnen">${esc(r)}</span>` : "–");
+  const table = (head, rows) => `<table class="grid-table"><thead><tr>${head.map((h) => `<th>${h}</th>`).join("")}</tr></thead><tbody>${rows.join("")}</tbody></table>`;
+  const section = (heading, list, hint, html, okText) => `
+      <div class="section-title">${heading} <span class="muted">· ${list.length}${hint ? " · " + hint : ""}</span></div>
+      <div class="table-wrap" style="max-height:420px;overflow:auto">${list.length ? html : `<div class="hint" style="padding:14px">${okText}</div>`}</div>`;
+
+  const nt = d.nummer_nur_telekom || [], ng = d.nummer_nur_glpi || [], ba = d.benutzer_abweichend || [];
+  const sf = d.sim_fehlt_in_glpi || [], sg = d.sim_nur_glpi || [], sl = d.sim_falsche_leitung || [], so = d.sim_ohne_leitung || [];
+  const kpis = [
+    ["Rufnummern in beiden", `${d.n_beide} / ${d.n_vertraege}`],
+    ["Fehlt in GLPI", String(nt.length)],
+    ["Leitung nur in GLPI", String(ng.length)],
+    ["Anderer Benutzer", String(ba.length)],
+    ["SIM-Karten in beiden", `${d.n_karten_beide} / ${d.n_karten_telekom}`],
+    ["SIM fehlt in GLPI", String(sf.length)],
+    ["SIM nur in GLPI", String(sg.length)],
+    ["SIM an anderer Leitung", String(sl.length)],
+  ];
+  const ntHtml = table(["Rufnummer", "Nutzer laut Report", "Rahmenvertrag", "Tarif"],
+    nt.map((c) => `<tr><td>${ruf(c.rufnummer)}</td><td>${esc(c.nutzer || "–")}</td><td>${esc(c.rahmenvertrag || "–")}</td><td>${esc(c.tarif || "–")}</td></tr>`));
+  const ngHtml = table(["Rufnummer (GLPI)", "Benutzer in GLPI", "GLPI"],
+    ng.map((l) => `<tr><td>${esc(l.rufnummer || "–")}</td><td>${esc(l.glpi_benutzer || "–")}</td><td>${lineLink(l.line_id)}</td></tr>`));
+  const artBadge = { "andere Person": "red", "kein Benutzer": "amber", "Schreibweise": "" };
+  const baHtml = table(["Rufnummer", "Nutzer laut Report", "Benutzer in GLPI", "Art", "GLPI"],
+    ba.map((b) => `<tr><td>${ruf(b.rufnummer)}</td><td>${esc(b.nutzer_telekom)}</td><td>${esc(b.nutzer_glpi || "–")}</td><td><span class="badge ${artBadge[b.art] || ""}">${esc(b.art)}</span></td><td>${lineLink(b.line_id)}</td></tr>`));
+  const sfHtml = table(["Kartennummer (Telekom)", "Art", "Rufnummer", "Nutzer laut Report"],
+    sf.map((k) => `<tr><td>${esc(k.karte)}</td><td>${esc(k.art)}</td><td>${ruf(k.rufnummer)}</td><td>${esc(k.nutzer || "–")}</td></tr>`));
+  const sgHtml = table(["Seriennummer (GLPI)", "Modell", "Leitung in GLPI", "Benutzer in GLPI", "GLPI"],
+    sg.map((s) => `<tr><td>${esc(s.serial || "–")}${s.unlesbar ? ' <span class="badge amber" title="zu kurz für einen Abgleich">unlesbar</span>' : ""}</td><td>${esc(s.modell || "–")}</td><td>${esc(s.glpi_rufnummer || "–")}</td><td>${esc(s.glpi_benutzer || "–")}</td><td>${simLink(s.sim_id)}</td></tr>`));
+  const slHtml = table(["Seriennummer (GLPI)", "Art", "Rufnummer laut Telekom", "Leitung in GLPI", "GLPI"],
+    sl.map((s) => `<tr><td>${esc(s.serial)}</td><td>${esc(s.art)}</td><td>${ruf(s.telekom_rufnummer)}</td><td>${esc(s.glpi_rufnummer || "–")}</td><td>${simLink(s.sim_id)}</td></tr>`));
+  const soHtml = table(["Seriennummer (GLPI)", "Art", "Rufnummer laut Telekom", "Benutzer in GLPI", "GLPI"],
+    so.map((s) => `<tr><td>${esc(s.serial)}</td><td>${esc(s.art)}</td><td>${ruf(s.telekom_rufnummer)}</td><td>${esc(s.glpi_benutzer || "–")}</td><td>${simLink(s.sim_id)}</td></tr>`));
+
+  pane.innerHTML = `
+    <div class="page">
+      <div class="section-title row-between" style="margin:0 0 14px">${title.replace('class="page-title"', 'class="page-title" style="margin:0"')}${refreshBtn}</div>
+      <div class="hint">GLPI-Stand: ${esc(String(d.stand).slice(0, 16).replace("T", " "))} · Report: ${fmtDate(d.report_stand)} · Schlüssel: Rufnummer = Leitung, Kartennummer = SIM-Seriennummer · Rufnummer klicken = Monitoring</div>
+      <div class="kpis">${kpis.map(([l, v]) => `<div class="card"><div class="num">${v}</div><div class="lbl">${l}</div></div>`).join("")}</div>
+      <div class="section-grid">
+        <div>${section("Rufnummer fehlt in GLPI", nt, "Vertrag aktiv, keine Leitung", ntHtml, "Jede Rufnummer hat eine Leitung in GLPI. 👍")}</div>
+        <div>${section("Leitung nur in GLPI", ng, "bei der Telekom nicht im Report", ngHtml, "Keine Leitung ohne Vertrag. 👍")}</div>
+      </div>
+      ${section("Anderer Benutzer", ba, "Nutzer laut Report ≠ Benutzer der Leitung · Pool ausgenommen · Schreibweise = vermutlich Tippfehler", baHtml, "Überall derselbe Benutzer. 👍")}
+      ${section("SIM-Karte fehlt in GLPI", sf, "Haupt- und MultiSIM-Karten des Reports", sfHtml, "Jede Telekom-Karte steht in GLPI. 👍")}
+      ${section("SIM-Karte nur in GLPI", sg, "alte oder getauschte Karte, oder Seriennummer unlesbar", sgHtml, "Keine Karte ohne Telekom-Gegenstück. 👍")}
+      ${section("SIM-Karte an anderer Leitung", sl, "Karte hängt in GLPI an einer anderen Nummer als bei der Telekom", slHtml, "Alle Karten hängen an der richtigen Leitung. 👍")}
+      ${section("SIM-Karte ohne Leitung in GLPI", so, "Karte bekannt, in GLPI keiner Leitung zugeordnet", soHtml, "Jede bekannte Karte hängt an einer Leitung. 👍")}
+    </div>`;
+}
+
+async function refreshGlpi(btn) {
+  btn.disabled = true;
+  btn.textContent = "lade aus GLPI …";
+  try {
+    const r = await api("/api/glpi/refresh", { method: "POST" });
+    toast(`GLPI geladen: ${r.leitungen} Leitungen, ${r.sim_karten} SIM-Karten`);
+  } catch (e) {
+    toast(e.message, true, 6000);
+  }
+  renderGlpi();
+}
+
 // Controlling-Monatswahl
 function setCtrlInvoice(id) { state.ctrlInvoiceId = id; renderControlling(); }
 function selectCtrlByPeriod(period) {
@@ -1262,6 +1350,13 @@ document.getElementById("view-controlling").addEventListener("change", (e) => {
 });
 // Rufnummer aus Mitarbeiter-Abgleich -> Monitoring öffnen
 document.getElementById("view-mitarbeiter").addEventListener("click", (e) => {
+  const el = e.target.closest("[data-goto-ruf]");
+  if (el && el.dataset.gotoRuf) gotoLinie(el.dataset.gotoRuf);
+});
+// GLPI-Abgleich: Neu laden, Rufnummer -> Monitoring (Links nach GLPI öffnen normal)
+document.getElementById("view-glpi").addEventListener("click", (e) => {
+  if (e.target.id === "glpiRefresh") return refreshGlpi(e.target);
+  if (e.target.closest("a")) return;
   const el = e.target.closest("[data-goto-ruf]");
   if (el && el.dataset.gotoRuf) gotoLinie(el.dataset.gotoRuf);
 });

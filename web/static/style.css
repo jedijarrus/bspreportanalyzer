@@ -21,6 +21,7 @@ body { margin: 0; font-family: "Segoe UI", system-ui, -apple-system, sans-serif;
 }
 .navtab:hover { background: var(--bg); color: var(--ink); }
 .navtab.active { background: #fdeaf3; color: var(--magenta-dark); }
+@media (max-width: 1440px) { .navtab { padding: 8px 10px; } }
 
 /* Seiten (Rechnungen / Controlling) */
 .viewpane[hidden] { display: none; }

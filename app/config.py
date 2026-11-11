@@ -43,6 +43,37 @@ def azure_configured() -> bool:
     return bool(s["tenant"] and s["client_id"] and s["client_secret"])
 
 
+# ---- GLPI-Abgleich (optional) -------------------------------------------
+# High-Level-API von GLPI (ab 11), Anmeldung per OAuth2 Password-Grant. GLPI_URL ist
+# die API-Basis, also https://<glpi>/api.php. Sind alle fünf gesetzt, gibt es den
+# Reiter „GLPI" mit Daten; sonst zeigt er nur, was fehlt.
+GLPI_KEYS = ("GLPI_URL", "GLPI_CLIENT_ID", "GLPI_CLIENT_SECRET", "GLPI_USERNAME", "GLPI_PASSWORD")
+
+
+def glpi_settings() -> dict[str, str | None]:
+    url = (os.environ.get("GLPI_URL") or "").strip().rstrip("/")
+    # tolerant: eine mitkopierte Versionsangabe (…/api.php/v3.0) abschneiden
+    url = url.removesuffix("/v3.0").removesuffix("/v3").rstrip("/")
+    return {
+        "url": url or None,
+        "client_id": os.environ.get("GLPI_CLIENT_ID") or None,
+        "client_secret": os.environ.get("GLPI_CLIENT_SECRET") or None,
+        "username": os.environ.get("GLPI_USERNAME") or None,
+        "password": os.environ.get("GLPI_PASSWORD") or None,
+    }
+
+
+def glpi_missing() -> list[str]:
+    """Die Namen der GLPI-Variablen, die nicht gesetzt sind (leer = eingerichtet)."""
+    return [k for k in GLPI_KEYS if not (os.environ.get(k) or "").strip()]
+
+
+def glpi_web_base() -> str | None:
+    """Basis der GLPI-Oberfläche für Links auf Einträge (API-Basis ohne /api.php)."""
+    url = glpi_settings()["url"]
+    return url.removesuffix("/api.php") if url else None
+
+
 def get_secret_key() -> str:
     """Secret für signierte Session-Cookies.
 

@@ -11,6 +11,7 @@ Alle Daten bleiben lokal; nichts verlässt den Container.
 from __future__ import annotations
 
 import datetime as dt
+import json
 from pathlib import Path
 
 from fastapi import Depends, FastAPI, HTTPException, UploadFile
@@ -21,11 +22,12 @@ from pydantic import BaseModel
 from starlette.middleware.sessions import SessionMiddleware
 from starlette.requests import Request
 
-from app import analytics, auth, azure_verify, config, employee_parser, invoice_parser, parser, version
+from app import analytics, auth, azure_verify, config, employee_parser, glpi_client, invoice_parser, parser, version
 from app.store import Store
 
 WEB_DIR = Path(__file__).resolve().parents[1] / "web"
 PW_HASH_KEY = "password_hash"
+GLPI_SNAPSHOT_KEY = "glpi_snapshot"   # settings-Eintrag: letzter GLPI-Stand (JSON)
 MIN_PASSWORD_LEN = 8
 
 VVL_VIEW_FIELDS = (
@@ -270,6 +272,34 @@ def create_app(secret_key: str | None = None) -> FastAPI:
             "report_stand": report_stand,
             **abgleich,
         }
+
+    # ---- GLPI-Abgleich (Reiter „GLPI") -----------------------------------
+    @app.get("/api/glpi", dependencies=[Depends(require_auth)])
+    def glpi_abgleich(db: Store = Depends(get_store)):
+        """Abgleich der aktuellen Flotte gegen den zuletzt geladenen GLPI-Stand."""
+        missing = config.glpi_missing()
+        if missing:
+            return {"configured": False, "missing": missing}
+        raw = db.get_setting(GLPI_SNAPSHOT_KEY)
+        reps = db.list_reports()
+        report_stand = max((r.get("report_date") or "" for r in reps), default="") or None
+        base = {"configured": True, "glpi_web": config.glpi_web_base(), "report_stand": report_stand}
+        if not raw:
+            return {**base, "stand": None}
+        snap = json.loads(raw)
+        return {**base, "stand": snap.get("fetched_at"), **analytics.glpi_abgleich(db.all_contracts(), snap)}
+
+    @app.post("/api/glpi/refresh", dependencies=[Depends(require_auth)])
+    def glpi_refresh(db: Store = Depends(get_store)):
+        """Leitungen und SIM-Karten neu aus GLPI laden (nur lesend) und als Stand speichern."""
+        if config.glpi_missing():
+            raise HTTPException(400, "GLPI ist nicht eingerichtet.")
+        try:
+            snap = glpi_client.fetch_snapshot(config.glpi_settings())
+        except glpi_client.GlpiError as e:
+            raise HTTPException(502, str(e))
+        db.set_setting(GLPI_SNAPSHOT_KEY, json.dumps(snap, ensure_ascii=False))
+        return {"stand": snap["fetched_at"], "leitungen": len(snap["lines"]), "sim_karten": len(snap["sims"])}
 
     @app.get("/api/notes", dependencies=[Depends(require_auth)])
     def get_notes(db: Store = Depends(get_store)):

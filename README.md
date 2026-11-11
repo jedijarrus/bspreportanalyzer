@@ -23,7 +23,7 @@ jedem Vertrag, was er im jeweiligen Monat gekostet und verbraucht hat.
 
 ## Sichten
 
-Drei Bereiche (Reiter oben):
+Fünf Bereiche (Reiter oben):
 
 **Verträge** – die aktuelle Flotte aus den Reports
 - Gesamtsicht über alle Rahmenverträge; pro Rahmenvertrag zählt jeweils der
@@ -51,6 +51,19 @@ Drei Bereiche (Reiter oben):
 - Rufnummer-Monitoring: eine einzelne Rufnummer über die Monate – Kosten,
   Verbrauch, Tarif/Optionen, Auffälligkeiten. Aus Suche oder Controlling
   aufrufbar; der gewählte Monat wird in die Detailseite übernommen
+
+**Mitarbeiter** – Abgleich einer Belegschaftsliste (.xlsx: PersNr, Nachname,
+Vorname) gegen den neuesten Report; Schlüssel ist die Kostenstelle, die dafür die PersNr tragen muss
+
+**GLPI** – Abgleich der aktuellen Flotte mit GLPI (optional, siehe Konfiguration)
+- Schlüssel: Rufnummer = GLPI-Leitung, Telekom-Kartennummer (Haupt- und
+  MultiSIM-Karten) = Seriennummer der GLPI-SIM-Karte (Ende der 20 Ziffern,
+  führende Nullen egal)
+- Rufnummer fehlt in GLPI / Leitung nur in GLPI, anderer Benutzer (Pool
+  ausgenommen), SIM-Karte fehlt in GLPI / nur in GLPI / an anderer Leitung /
+  ohne Leitung; Links springen direkt zum Eintrag in GLPI
+- „Aus GLPI neu laden" liest nur (Leitungen, SIM-Karten, Namen der zugeordneten
+  Benutzer) und speichert den Stand; PIN/PUK werden nie übernommen
 
 ## Schnellstart
 
@@ -89,6 +102,9 @@ Steuerung über Umgebungsvariablen (z. B. in `docker-compose.yml`):
 | `BSP_BASE_URL` | aus Request abgeleitet | Basis-URL für die SSO-Redirect-URI hinter einem Proxy |
 | `GRAPH_TENANT_ID` / `GRAPH_CLIENT_ID` / `GRAPH_CLIENT_SECRET` | — | Azure/Entra-ID-SSO (alle drei = SSO aktiv) |
 | `GRAPH_REQUIRED_ROLE` | — | optional: nur Nutzer mit dieser App-Rolle dürfen rein; mehrere per Komma erlaubt (`Analyzer.Read,Analyzer.Admin`) – eine genügt |
+| `GLPI_URL` | — | GLPI-Abgleich: API-Basis, z. B. `https://glpi.example.com/api.php` |
+| `GLPI_CLIENT_ID` / `GLPI_CLIENT_SECRET` | — | OAuth-Client aus GLPI (Konfiguration → OAuth-Clients, Grant „Password", Scope `api`) |
+| `GLPI_USERNAME` / `GLPI_PASSWORD` | — | GLPI-Benutzer mit Leserechten auf Leitungen, SIM-Karten und Benutzer (lokales Konto) |
 
 ### Anmeldung
 
@@ -138,6 +154,7 @@ app/
   analytics.py       Auswertungen (Flotte, VVL, Kosten, Controlling, Monitoring)
   auth.py            Passwort-Hashing (PBKDF2) + Session
   azure_verify.py    Entra-ID-Token-Validierung (JWKS) fürs SSO
+  glpi_client.py     GLPI-API (OAuth2): Leitungen + SIM-Karten für den Abgleich
   api.py             FastAPI: Auth, Upload, Daten- und Auswertungs-Endpunkte
   config.py          Pfade & Konfiguration
   version.py         Build-Marker (SHA / Bauzeit)

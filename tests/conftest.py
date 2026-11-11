@@ -16,7 +16,8 @@ from fixtures.fake_invoice_csv_generator import generate_invoice_csv  # noqa: E4
 @pytest.fixture(autouse=True)
 def _clear_azure_env(monkeypatch):
     """Azure-SSO-ENV je Test leeren -> deterministisch (nur azure_app setzt sie)."""
-    for k in ("GRAPH_TENANT_ID", "GRAPH_CLIENT_ID", "GRAPH_CLIENT_SECRET", "BSP_BASE_URL"):
+    for k in ("GRAPH_TENANT_ID", "GRAPH_CLIENT_ID", "GRAPH_CLIENT_SECRET", "BSP_BASE_URL",
+              "GLPI_URL", "GLPI_CLIENT_ID", "GLPI_CLIENT_SECRET", "GLPI_USERNAME", "GLPI_PASSWORD"):
         monkeypatch.delenv(k, raising=False)
 
 
